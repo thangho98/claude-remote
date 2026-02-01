@@ -117,6 +117,9 @@ async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
         onToolUse: (tool, input) => {
           send(ws, { type: "terminal:output", content: `[${tool}] ${input}` });
         },
+        onThinking: (isThinking) => {
+          send(ws, { type: "message:thinking", isThinking });
+        },
       },
       sessionId
     );

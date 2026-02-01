@@ -5,6 +5,7 @@ export interface ClaudeMessageHandler {
   onDone: () => void;
   onError: (error: string) => void;
   onToolUse?: (tool: string, input: string) => void;
+  onThinking?: (isThinking: boolean) => void;
 }
 
 /**
@@ -30,7 +31,11 @@ export async function sendToClaude(
       "--output-format",
       "stream-json",
       "--verbose", // Required for stream-json in print mode
+      "--dangerously-skip-permissions", // Auto-approve all tool uses
     ];
+
+    // Notify that we're starting (thinking)
+    handlers.onThinking?.(true);
 
     // If we have a session ID, resume that session
     if (sessionId) {
@@ -130,6 +135,9 @@ export async function sendToClaude(
     Promise.all([processStream(), processStderr()]).then(async () => {
       const exitCode = await proc.exited;
 
+      // Always turn off thinking when done
+      handlers.onThinking?.(false);
+
       if (exitCode !== 0 && !hasError) {
         handlers.onError(`Claude exited with code ${exitCode}`);
       }
@@ -158,11 +166,18 @@ function handleStreamEvent(
       for (const block of msg.content) {
         if (block && typeof block === "object") {
           const b = block as Record<string, unknown>;
-          if (b.type === "text" && typeof b.text === "string") {
+          if (b.type === "thinking") {
+            // Claude is thinking - notify UI
+            handlers.onThinking?.(true);
+          } else if (b.type === "text" && typeof b.text === "string") {
+            // Got text content - no longer just thinking
+            handlers.onThinking?.(false);
             handlers.onChunk(b.text);
             appendContent(b.text);
             sentContent = true;
           } else if (b.type === "tool_use") {
+            // Using a tool - no longer just thinking
+            handlers.onThinking?.(false);
             const toolName = b.name as string;
             const toolInput = JSON.stringify(b.input, null, 2);
             handlers.onToolUse?.(toolName, toolInput);
@@ -170,15 +185,25 @@ function handleStreamEvent(
         }
       }
     }
+  } else if (e.type === "content_block_start") {
+    const contentBlock = e.content_block as Record<string, unknown> | undefined;
+    if (contentBlock?.type === "thinking") {
+      handlers.onThinking?.(true);
+    }
   } else if (e.type === "content_block_delta") {
     const delta = e.delta as Record<string, unknown> | undefined;
-    if (delta?.type === "text_delta" && typeof delta.text === "string") {
+    if (delta?.type === "thinking_delta") {
+      // Still thinking
+      handlers.onThinking?.(true);
+    } else if (delta?.type === "text_delta" && typeof delta.text === "string") {
+      handlers.onThinking?.(false);
       handlers.onChunk(delta.text);
       appendContent(delta.text);
       sentContent = true;
     }
   } else if (e.type === "result" && typeof e.result === "string") {
     // Final result - only send if we haven't streamed content yet
+    handlers.onThinking?.(false);
     if (!hasStreamedContent && e.result && !e.result.startsWith("{")) {
       handlers.onChunk(e.result);
       appendContent(e.result);

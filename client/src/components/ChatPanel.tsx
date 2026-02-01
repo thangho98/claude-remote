@@ -7,6 +7,7 @@ interface ChatPanelProps {
   messages: Message[];
   onSend: (content: string) => void;
   isLoading?: boolean;
+  isThinking?: boolean;
   currentFile?: string | null;
   currentModel?: string | null;
   tokenUsage?: TokenUsage | null;
@@ -145,6 +146,7 @@ export function ChatPanel({
   messages,
   onSend,
   isLoading,
+  isThinking,
   currentFile,
   currentModel,
   tokenUsage,
@@ -248,13 +250,25 @@ export function ChatPanel({
         ) : (
           <MessageList messages={messages} />
         )}
+
+        {/* Thinking indicator */}
+        {isThinking && (
+          <div className="flex items-center gap-3 px-4 py-3 bg-gray-800/50 border-t border-gray-700">
+            <div className="flex gap-1">
+              <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+            </div>
+            <span className="text-sm text-gray-400">Claude is thinking...</span>
+          </div>
+        )}
       </div>
 
       {/* Input */}
       <MessageInput
         onSend={onSend}
         disabled={isLoading}
-        placeholder={isLoading ? "Claude is thinking..." : "Ask anything..."}
+        placeholder={isThinking ? "Claude is thinking..." : isLoading ? "Processing..." : "Ask anything..."}
         currentFile={currentFile}
         currentModel={currentModel}
         tokenUsage={tokenUsage}

@@ -17,6 +17,7 @@ interface AppState {
   // Chat
   messages: Message[];
   isLoading: boolean;
+  isThinking: boolean;
 
   // Files
   fileTree: FileNode | null;
@@ -66,6 +67,7 @@ interface AppActions {
 
   // Loading
   setLoading: (loading: boolean) => void;
+  setThinking: (thinking: boolean) => void;
 
   // Sessions
   setSessions: (sessions: Session[]) => void;
@@ -89,6 +91,7 @@ export const useAppStore = create<AppState & AppActions>()(
       projects: [],
       messages: [],
       isLoading: false,
+      isThinking: false,
       fileTree: null,
       selectedFile: null,
       terminalOutput: [],
@@ -161,6 +164,7 @@ export const useAppStore = create<AppState & AppActions>()(
 
       // Loading
       setLoading: (isLoading) => set({ isLoading }),
+      setThinking: (isThinking) => set({ isThinking }),
 
       // Sessions
       setSessions: (sessions) => set({ sessions }),

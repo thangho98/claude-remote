@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { v7 as uuidv7 } from "uuid";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useAppStore } from "./stores/appStore";
 import { AuthScreen } from "./components/AuthScreen";
@@ -28,6 +29,8 @@ function App() {
     setMessageDone,
     isLoading,
     setLoading,
+    isThinking,
+    setThinking,
     projects,
     setProjects,
     currentProject,
@@ -103,16 +106,22 @@ function App() {
         case "message:done":
           setMessageDone(event.id);
           setLoading(false);
+          setThinking(false);
           break;
 
         case "message:error":
           setLoading(false);
+          setThinking(false);
           addMessage({
-            id: event.id || crypto.randomUUID(),
+            id: event.id || uuidv7(),
             role: "assistant",
             content: `Error: ${event.error}`,
             timestamp: new Date().toISOString(),
           });
+          break;
+
+        case "message:thinking":
+          setThinking(event.isThinking);
           break;
 
         case "terminal:output":
@@ -149,6 +158,7 @@ function App() {
       updateMessage,
       setMessageDone,
       setLoading,
+      setThinking,
       addTerminalOutput,
       setSessions,
       setCurrentSession,
@@ -222,7 +232,7 @@ function App() {
     if (!isConnected) {
       console.error("❌ Not connected to server");
       addMessage({
-        id: crypto.randomUUID(),
+        id: uuidv7(),
         role: "assistant",
         content: "Error: Not connected to server. Please refresh the page.",
         timestamp: new Date().toISOString(),
@@ -231,7 +241,7 @@ function App() {
     }
 
     const userMessage: Message = {
-      id: crypto.randomUUID(),
+      id: uuidv7(),
       role: "user",
       content,
       timestamp: new Date().toISOString(),
@@ -244,7 +254,7 @@ function App() {
       console.error("❌ Failed to send message");
       setLoading(false);
       addMessage({
-        id: crypto.randomUUID(),
+        id: uuidv7(),
         role: "assistant",
         content: "Error: Failed to send message. Please check your connection.",
         timestamp: new Date().toISOString(),
@@ -260,17 +270,6 @@ function App() {
     }
   }, []);
 
-  // Auto-refresh current session every 60 seconds
-  useEffect(() => {
-    if (!currentSession || !isConnected) return;
-
-    const intervalId = setInterval(() => {
-      console.log(`🔄 Auto-refreshing session: ${currentSession.id}`);
-      send({ type: "session:switch", sessionId: currentSession.id });
-    }, 60000); // 60 seconds
-
-    return () => clearInterval(intervalId);
-  }, [currentSession?.id, isConnected, send]);
 
   // Show auth screen if not authenticated
   if (!token || !authenticated) {
@@ -360,6 +359,7 @@ function App() {
               messages={messages}
               onSend={handleSendMessage}
               isLoading={isLoading}
+              isThinking={isThinking}
               currentFile={selectedFile?.path}
               currentModel={currentModel}
               tokenUsage={tokenUsage}
@@ -375,6 +375,7 @@ function App() {
             messages={messages}
             onSend={handleSendMessage}
             isLoading={isLoading}
+            isThinking={isThinking}
             currentFile={selectedFile?.path}
             currentModel={currentModel}
             tokenUsage={tokenUsage}

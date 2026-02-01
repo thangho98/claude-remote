@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import type { TokenUsage } from "@shared/types";
 
 interface MessageInputProps {
@@ -105,37 +105,60 @@ export function MessageInput({
   currentModel,
   tokenUsage,
 }: MessageInputProps) {
-  const [content, setContent] = useState("");
+  const [hasContent, setHasContent] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Check content and update button state - works on iOS
+  const updateHasContent = () => {
+    const value = textareaRef.current?.value || "";
+    const has = value.trim().length > 0;
+    console.log("📝 Input changed, hasContent:", has, "value:", value.slice(0, 20));
+    setHasContent(has);
+  };
+
   const handleSubmit = () => {
-    if (content.trim() && !disabled) {
-      console.log("📤 Sending message:", content.trim().slice(0, 50));
-      onSend(content.trim());
-      setContent("");
-      // Reset textarea height
+    const value = textareaRef.current?.value || "";
+    console.log("🔘 Submit clicked, value:", value.slice(0, 30), "disabled:", disabled, "hasContent:", hasContent);
+    if (value.trim() && !disabled) {
+      console.log("📤 Sending message:", value.trim().slice(0, 50));
+      onSend(value.trim());
+      // Reset textarea
       if (textareaRef.current) {
+        textareaRef.current.value = "";
         textareaRef.current.style.height = "auto";
       }
+      setHasContent(false);
     }
   };
 
+  // Handle touch for iOS
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.preventDefault();
+    handleSubmit();
+  };
+
+  // Check if mobile device (no Shift key available)
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // On desktop: Enter submits, Shift+Enter for new line
+    // On mobile: Enter creates new line, use button to submit
+    if (e.key === "Enter" && !e.shiftKey && !isMobile) {
       e.preventDefault();
       handleSubmit();
     }
   };
 
-  // Auto-resize textarea
-  useEffect(() => {
+  // Auto-resize textarea on input
+  const handleInput = () => {
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = "auto";
       const newHeight = Math.min(textarea.scrollHeight, 200);
       textarea.style.height = `${newHeight}px`;
     }
-  }, [content]);
+    updateHasContent();
+  };
 
   // Get filename from path
   const getFileName = (path: string) => {
@@ -157,12 +180,13 @@ export function MessageInput({
         <div className="flex items-end p-2 lg:p-3 gap-2 lg:gap-3">
           <textarea
             ref={textareaRef}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onInput={handleInput}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             disabled={disabled}
             rows={1}
+            autoComplete="off"
+            autoCorrect="on"
             className="flex-1 bg-transparent text-white placeholder-gray-500 resize-none outline-none text-sm disabled:opacity-50"
           />
 
@@ -201,8 +225,9 @@ export function MessageInput({
             {/* Send Button */}
             <button
               type="button"
-              onClick={() => handleSubmit()}
-              disabled={disabled || !content.trim()}
+              onClick={handleSubmit}
+              onTouchEnd={handleTouchEnd}
+              disabled={disabled || !hasContent}
               className="p-2 bg-[#d97757] hover:bg-[#c2694d] disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-md transition-all active:scale-95"
               aria-label="Send message"
             >

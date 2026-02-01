@@ -17,6 +17,7 @@ export type WSServerEvent =
   | { type: "message:chunk"; content: string; id: string }
   | { type: "message:done"; id: string }
   | { type: "message:error"; error: string; id: string }
+  | { type: "message:thinking"; isThinking: boolean }
   | { type: "terminal:output"; content: string }
   | { type: "file:content"; path: string; content: string }
   | { type: "file:tree"; path: string; tree: FileNode }
