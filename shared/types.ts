@@ -16,6 +16,7 @@ export type WSServerEvent =
   | { type: "auth:success"; user: { authenticated: boolean } }
   | { type: "auth:error"; message: string }
   | { type: "message:chunk"; content: string; id: string }
+  | { type: "message:tool_use"; id: string; toolName: string; toolInput: string }
   | { type: "message:done"; id: string }
   | { type: "message:error"; error: string; id: string }
   | { type: "message:thinking"; isThinking: boolean }

@@ -1,4 +1,4 @@
-import { readdir, readFile } from "fs/promises";
+import { readdir, readFile, stat } from "fs/promises";
 import { join } from "path";
 import type { Session, TokenUsage, ContentBlock } from "../../../shared/types";
 
@@ -37,7 +37,8 @@ interface SessionMessage {
 function getClaudeFolderName(projectPath: string): string {
   // Convert path like /Users/thawng/Desktop/source/AI/claude-remote
   // to folder name like -Users-thawng-Desktop-source-AI-claude-remote
-  return projectPath.replace(/\//g, "-").replace(/^-/, "-");
+  // Claude CLI replaces both / and _ with -
+  return projectPath.replace(/[/_]/g, "-");
 }
 
 function extractTextFromContent(content: unknown): string {
@@ -118,61 +119,111 @@ export async function listSessions(projectPath: string): Promise<Session[]> {
   const claudeFolderName = getClaudeFolderName(projectPath);
   const claudeFolderPath = join(CLAUDE_PROJECTS_DIR, claudeFolderName);
 
+  // Build a map of sessions from index
+  const indexMap = new Map<string, SessionIndexEntry>();
   try {
     const indexPath = join(claudeFolderPath, "sessions-index.json");
     const indexContent = await readFile(indexPath, "utf-8");
     const indexData: SessionsIndex = JSON.parse(indexContent);
-
-    if (!indexData.entries || indexData.entries.length === 0) {
-      return [];
+    if (indexData.entries) {
+      for (const entry of indexData.entries) {
+        indexMap.set(entry.sessionId, entry);
+      }
     }
+  } catch {
+    // Index doesn't exist or is invalid - continue with folder scan
+  }
 
-    // Sort by modified date, most recent first
-    const sortedEntries = [...indexData.entries].sort((a, b) => {
+  // Scan folder for .jsonl files to find sessions not in index
+  const allSessionIds = new Set<string>(indexMap.keys());
+  try {
+    const files = await readdir(claudeFolderPath);
+    for (const file of files) {
+      // Match UUID pattern session files, skip agent-*.jsonl
+      if (file.endsWith(".jsonl") && !file.startsWith("agent-")) {
+        const sessionId = file.replace(".jsonl", "");
+        allSessionIds.add(sessionId);
+      }
+    }
+  } catch {
+    // Folder doesn't exist - return empty
+    return [];
+  }
+
+  if (allSessionIds.size === 0) {
+    return [];
+  }
+
+  // Build session list from both index and discovered files
+  const sessions = await Promise.all(
+    Array.from(allSessionIds).map(async (sessionId) => {
+      const indexEntry = indexMap.get(sessionId);
+      const { firstPrompt: extractedFirst, lastMessage } = await getFirstAndLastMessage(
+        claudeFolderPath,
+        sessionId
+      );
+
+      // Get file stats for sessions not in index or to get accurate modified time
+      let created: string;
+      let modified: string;
+      let messageCount = 0;
+
+      if (indexEntry) {
+        created = indexEntry.created;
+        messageCount = indexEntry.messageCount || 0;
+        // Use file mtime for more accurate modified time
+        try {
+          const fileStat = await stat(join(claudeFolderPath, `${sessionId}.jsonl`));
+          modified = fileStat.mtime.toISOString();
+        } catch {
+          modified = indexEntry.modified;
+        }
+      } else {
+        // Session not in index - get times from file
+        try {
+          const fileStat = await stat(join(claudeFolderPath, `${sessionId}.jsonl`));
+          created = fileStat.birthtime.toISOString();
+          modified = fileStat.mtime.toISOString();
+        } catch {
+          // File doesn't exist
+          return null;
+        }
+      }
+
+      // Use extracted first prompt if index has bad value
+      const indexPrompt = indexEntry?.firstPrompt;
+      const hasGoodIndexPrompt = indexPrompt &&
+        indexPrompt.toLowerCase() !== "no prompt" &&
+        indexPrompt !== "New session" &&
+        indexPrompt.trim().length > 0;
+
+      const firstPrompt = hasGoodIndexPrompt ? indexPrompt : (extractedFirst || "New session");
+
+      // Use summary as title, fallback to firstPrompt
+      const title = indexEntry?.summary && indexEntry.summary.trim().length > 0
+        ? indexEntry.summary
+        : firstPrompt;
+
+      return {
+        id: sessionId,
+        title,
+        firstPrompt,
+        lastMessage,
+        messageCount,
+        created,
+        modified,
+      };
+    })
+  );
+
+  // Filter out nulls and sort by modified date (most recent first)
+  return sessions
+    .filter((s): s is NonNullable<typeof s> => s !== null)
+    .sort((a, b) => {
       const dateA = new Date(a.modified || a.created).getTime();
       const dateB = new Date(b.modified || b.created).getTime();
       return dateB - dateA;
     });
-
-    // Get first and last message for each session (parallel)
-    const sessions = await Promise.all(
-      sortedEntries.map(async (entry) => {
-        const { firstPrompt: extractedFirst, lastMessage } = await getFirstAndLastMessage(
-          claudeFolderPath,
-          entry.sessionId
-        );
-
-        // Use extracted first prompt if index has bad value
-        const indexPrompt = entry.firstPrompt;
-        const hasGoodIndexPrompt = indexPrompt &&
-          indexPrompt.toLowerCase() !== "no prompt" &&
-          indexPrompt !== "New session" &&
-          indexPrompt.trim().length > 0;
-
-        const firstPrompt = hasGoodIndexPrompt ? indexPrompt : (extractedFirst || "New session");
-
-        // Use summary as title, fallback to firstPrompt
-        const title = entry.summary && entry.summary.trim().length > 0
-          ? entry.summary
-          : firstPrompt;
-
-        return {
-          id: entry.sessionId,
-          title,
-          firstPrompt,
-          lastMessage,
-          messageCount: entry.messageCount || 0,
-          created: entry.created,
-          modified: entry.modified,
-        };
-      })
-    );
-
-    return sessions;
-  } catch (error) {
-    console.warn(`Failed to read sessions for ${projectPath}:`, error);
-    return [];
-  }
 }
 
 export async function getSessionInfo(
@@ -235,6 +286,10 @@ export async function getSessionInfo(
       },
     };
   } catch (error) {
+    // ENOENT is expected when session file was deleted - return null silently
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return null;
+    }
     console.warn(`Failed to read session ${sessionId}:`, error);
     return null;
   }
@@ -282,6 +337,10 @@ export async function getSessionMessages(
 
     return messages;
   } catch (error) {
+    // ENOENT is expected when session file was deleted - return empty silently
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return [];
+    }
     console.warn(`Failed to read session messages ${sessionId}:`, error);
     return [];
   }

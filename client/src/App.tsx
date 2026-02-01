@@ -26,6 +26,7 @@ function App() {
     setMessages,
     addMessage,
     updateMessage,
+    addToolUseToMessage,
     setMessageDone,
     isLoading,
     setLoading,
@@ -105,6 +106,22 @@ function App() {
           break;
         }
 
+        case "message:tool_use": {
+          const existingMsg = messages.find((m) => m.id === event.id);
+          if (!existingMsg) {
+            addMessage({
+              id: event.id,
+              role: "assistant",
+              content: [{ type: "tool_use", id: event.id, name: event.toolName, input: {} }],
+              timestamp: new Date().toISOString(),
+              isStreaming: true,
+            });
+          } else {
+            addToolUseToMessage(event.id, event.toolName, event.toolInput);
+          }
+          break;
+        }
+
         case "message:done":
           setMessageDone(event.id);
           setLoading(false);
@@ -167,6 +184,7 @@ function App() {
       setMessages,
       addMessage,
       updateMessage,
+      addToolUseToMessage,
       setMessageDone,
       setLoading,
       setThinking,
@@ -230,6 +248,8 @@ function App() {
     setTokenUsage(null);
     // Clear messages for new session
     useAppStore.getState().clearMessages();
+    // Tell backend to clear session ID
+    send({ type: "session:new" });
   };
 
   // Handle file selection

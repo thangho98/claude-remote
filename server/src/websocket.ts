@@ -82,6 +82,10 @@ async function handleEvent(ws: ServerWebSocket<WSData>, event: WSClientEvent) {
       await handleSessionSwitch(ws, event.sessionId);
       break;
 
+    case "session:new":
+      handleSessionNew(ws);
+      break;
+
     case "commands:list":
       await handleCommandsList(ws);
       break;
@@ -117,11 +121,19 @@ async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
           send(ws, { type: "message:done", id });
           console.log(`✅ Message ${id} completed`);
 
-          // Refresh session list after message completes
+          // Refresh session list and info after message completes
           try {
             const sessions = await listSessions(ws.data.workingDirectory!);
             send(ws, { type: "session:list", sessions });
             console.log(`🔄 Refreshed session list (${sessions.length} sessions)`);
+
+            // Update session info (model + token usage)
+            if (ws.data.currentSessionId) {
+              const info = await getSessionInfo(ws.data.workingDirectory!, ws.data.currentSessionId);
+              if (info) {
+                send(ws, { type: "session:info", model: info.model, usage: info.usage });
+              }
+            }
           } catch (error) {
             console.error("Failed to refresh sessions:", error);
           }
@@ -132,14 +144,21 @@ async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
         },
         onToolUse: (tool, input) => {
           send(ws, { type: "terminal:output", content: `[${tool}] ${input}` });
+          send(ws, { type: "message:tool_use", id, toolName: tool, toolInput: input });
         },
         onThinking: (isThinking) => {
           send(ws, { type: "message:thinking", isThinking });
         },
-        onSessionId: (newSessionId) => {
+        onSessionId: async (newSessionId) => {
           ws.data.currentSessionId = newSessionId;
           send(ws, { type: "session:id", sessionId: newSessionId });
           console.log(`📋 Updated current session: ${newSessionId}`);
+
+          // Send session info (model + token usage) for new session
+          const info = await getSessionInfo(ws.data.workingDirectory!, newSessionId);
+          if (info) {
+            send(ws, { type: "session:info", model: info.model, usage: info.usage });
+          }
         },
       },
     });
@@ -192,6 +211,12 @@ async function handleSessionList(ws: ServerWebSocket<WSData>) {
     console.error("Failed to list sessions:", error);
     send(ws, { type: "session:list", sessions: [] });
   }
+}
+
+function handleSessionNew(ws: ServerWebSocket<WSData>) {
+  ws.data.currentSessionId = null;
+  console.log("🆕 Cleared session ID for new session");
+  send(ws, { type: "session:current", session: null });
 }
 
 async function handleSessionSwitch(ws: ServerWebSocket<WSData>, sessionId: string) {

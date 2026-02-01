@@ -57,6 +57,7 @@ interface AppActions {
   setMessages: (messages: Message[]) => void;
   addMessage: (message: Message) => void;
   updateMessage: (id: string, content: string) => void;
+  addToolUseToMessage: (id: string, toolName: string, toolInput: string) => void;
   setMessageDone: (id: string) => void;
   clearMessages: () => void;
 
@@ -149,9 +150,43 @@ export const useAppStore = create<AppState & AppActions>()(
 
       updateMessage: (id, content) =>
         set((state) => ({
-          messages: state.messages.map((m) =>
-            m.id === id ? { ...m, content: m.content + content } : m
-          ),
+          messages: state.messages.map((m) => {
+            if (m.id !== id) return m;
+            // Handle both string and array content
+            if (typeof m.content === "string") {
+              return { ...m, content: m.content + content };
+            }
+            // Content is array - find existing text block or add new one
+            const blocks = [...m.content];
+            const lastBlock = blocks[blocks.length - 1];
+            if (lastBlock && lastBlock.type === "text") {
+              // Append to existing text block
+              blocks[blocks.length - 1] = { ...lastBlock, text: lastBlock.text + content };
+            } else {
+              // Add new text block
+              blocks.push({ type: "text" as const, text: content });
+            }
+            return { ...m, content: blocks };
+          }),
+        })),
+
+      addToolUseToMessage: (id, toolName, _toolInput) =>
+        set((state) => ({
+          messages: state.messages.map((m) => {
+            if (m.id !== id) return m;
+            // Convert string content to array if needed
+            const currentContent = typeof m.content === "string"
+              ? [{ type: "text" as const, text: m.content }]
+              : m.content;
+            // Add tool_use block
+            return {
+              ...m,
+              content: [
+                ...currentContent,
+                { type: "tool_use" as const, id: `${id}-${toolName}`, name: toolName, input: {} },
+              ],
+            };
+          }),
         })),
 
       setMessageDone: (id) =>
