@@ -47,7 +47,7 @@ export function SessionPanel({
               onSessionSelect(e.target.value);
             }
           }}
-          className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-sm text-gray-200 focus:outline-none focus:border-orange-500 truncate"
+          className="flex-1 bg-gray-800 border border-gray-600 rounded-sm px-2 py-1.5 text-sm text-gray-200 focus:outline-hidden focus:border-orange-500 truncate"
         >
           <option value="" disabled>
             Select a session...
@@ -60,7 +60,7 @@ export function SessionPanel({
         </select>
         <button
           onClick={onNewSession}
-          className="px-2 py-1.5 bg-orange-600 hover:bg-orange-700 rounded text-sm text-white shrink-0"
+          className="px-2 py-1.5 bg-orange-600 hover:bg-orange-700 rounded-sm text-sm text-white shrink-0"
           title="New session"
         >
           +

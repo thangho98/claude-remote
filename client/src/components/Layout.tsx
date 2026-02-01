@@ -70,7 +70,7 @@ export function Layout({
         <div className="flex items-center gap-3">
           {/* Model display */}
           {currentModel && (
-            <span className="text-xs px-2 py-1 bg-orange-900/50 text-orange-300 rounded hidden sm:inline">
+            <span className="text-xs px-2 py-1 bg-orange-900/50 text-orange-300 rounded-sm hidden sm:inline">
               {currentModel}
             </span>
           )}
@@ -129,7 +129,7 @@ export function Layout({
                 <h2 className="font-semibold">Files</h2>
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="p-1 hover:bg-gray-700 rounded"
+                  className="p-1 hover:bg-gray-700 rounded-sm"
                 >
                   <svg
                     className="w-5 h-5"

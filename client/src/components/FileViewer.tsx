@@ -41,7 +41,7 @@ export function FileViewer({ path, content, onClose }: FileViewerProps) {
         </div>
         <button
           onClick={onClose}
-          className="p-1 rounded hover:bg-gray-700 text-gray-400 hover:text-white"
+          className="p-1 rounded-sm hover:bg-gray-700 text-gray-400 hover:text-white"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -56,7 +56,7 @@ export function FileViewer({ path, content, onClose }: FileViewerProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        <pre className={`p-4 text-sm font-mono whitespace-pre-wrap break-words ${getLanguageClass()}`}>
+        <pre className={`p-4 text-sm font-mono whitespace-pre-wrap wrap-break-word ${getLanguageClass()}`}>
           {content}
         </pre>
       </div>

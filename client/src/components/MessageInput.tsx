@@ -97,13 +97,13 @@ function getSourceBadge(source: SlashCommand["source"]) {
       return null;
     case "project":
       return (
-        <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-blue-500/20 text-blue-400 rounded">
+        <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-blue-500/20 text-blue-400 rounded-sm">
           project
         </span>
       );
     case "user":
       return (
-        <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-purple-500/20 text-purple-400 rounded">
+        <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-purple-500/20 text-purple-400 rounded-sm">
           user
         </span>
       );
@@ -307,7 +307,7 @@ export function MessageInput({
             autoComplete="off"
             autoCorrect="on"
             spellCheck={false}
-            className="flex-1 bg-transparent text-white placeholder-gray-500 resize-none outline-none text-sm disabled:opacity-50"
+            className="flex-1 bg-transparent text-white placeholder-gray-500 resize-none outline-hidden text-sm disabled:opacity-50"
             style={{ caretColor: "#d97757" }}
           />
 
@@ -316,7 +316,7 @@ export function MessageInput({
             {/* Attach Button */}
             <button
               type="button"
-              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded hover:bg-gray-700"
+              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded-sm hover:bg-gray-700"
               title="Attach file"
             >
               <svg

@@ -56,7 +56,7 @@ export function AuthScreen({ onAuth, error, isConnecting }: AuthScreenProps) {
               onChange={(e) => setToken(e.target.value)}
               placeholder="Enter your token"
               disabled={isConnecting}
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent disabled:opacity-50 transition-all"
+              className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-hidden focus:ring-2 focus:ring-orange-500 focus:border-transparent disabled:opacity-50 transition-all"
               autoFocus
               autoComplete="off"
             />

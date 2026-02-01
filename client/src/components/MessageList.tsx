@@ -7,7 +7,7 @@ import type { Message, ContentBlock, TextBlock, ThinkingBlock, ImageBlock, ToolU
 function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center cursor-zoom-out"
+      className="fixed inset-0 z-100 bg-black/90 flex items-center justify-center cursor-zoom-out"
       onClick={onClose}
     >
       {/* Close button */}
@@ -379,7 +379,7 @@ export function MessageList({ messages }: MessageListProps) {
                           const isInline = !className;
                           return isInline ? (
                             <code
-                              className="bg-gray-700 px-1.5 py-0.5 rounded text-sm"
+                              className="bg-gray-700 px-1.5 py-0.5 rounded-sm text-sm"
                               {...props}
                             >
                               {children}
@@ -396,7 +396,7 @@ export function MessageList({ messages }: MessageListProps) {
                     </ReactMarkdown>
                   </div>
                 ) : (
-                  <p className="whitespace-pre-wrap break-words">{textContent}</p>
+                  <p className="whitespace-pre-wrap wrap-break-word">{textContent}</p>
                 )
               )}
 
@@ -419,7 +419,7 @@ export function MessageList({ messages }: MessageListProps) {
               )}
 
               {message.isStreaming && (
-                <span className="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-1 rounded" />
+                <span className="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-1 rounded-sm" />
               )}
             </div>
           </div>
