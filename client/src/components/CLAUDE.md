@@ -7,12 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #992 | 3:42 PM | 🔵 | Tailwind v4 Migration Includes Additional Server and Shared Changes | ~448 |
-| #991 | " | ✅ | Tailwind v4 Migration Completed Across Full Stack Project | ~471 |
-| #967 | 3:34 PM | 🔵 | Tailwind CSS v4 Upgrade In Progress | ~365 |
-| #886 | 2:17 PM | 🔵 | Located MessageList component causing duplicate key warning | ~214 |
-| #821 | 12:17 PM | 🟣 | Added visual thinking indicator in ChatPanel | ~311 |
-| #819 | " | 🟣 | Added isThinking prop to ChatPanel component | ~239 |
-| #784 | 11:56 AM | 🔵 | ChatPanel component with mobile session modal | ~235 |
-| #782 | " | 🔴 | Applied dynamic viewport height to Layout component | ~232 |
+| #993 | 3:53 PM | 🔴 | Missing sessions-index.json file causing ENOENT error | ~302 |
 </claude-mem-context>

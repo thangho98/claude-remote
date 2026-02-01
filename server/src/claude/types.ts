@@ -8,8 +8,12 @@ export interface ClaudeMessageHandler {
   onDone: () => void;
   onError: (error: string) => void;
   onToolUse?: (tool: string, input: string) => void;
+  onToolResult?: (tool: string, result: string) => void;
   onThinking?: (isThinking: boolean) => void;
+  onThinkingContent?: (content: string) => void;
   onSessionId?: (sessionId: string) => void;
+  // New handler for sending full message objects (for consistency with session history)
+  onMessage?: (message: any) => void;
 }
 
 export interface ClaudeQueryOptions {
@@ -36,4 +40,4 @@ export interface ClaudeProvider {
   isAvailable(): Promise<boolean>;
 }
 
-export type ClaudeProviderType = "cli" | "sdk";
+export type ClaudeProviderType = 'cli' | 'sdk';

@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ClaudeProvider, ClaudeQueryOptions } from '../types';
 
 /**
@@ -29,7 +31,10 @@ export class ClaudeSdkProvider implements ClaudeProvider {
       // Query options with cwd and session support
       const queryOptions: Record<string, unknown> = {
         cwd: workingDirectory,
-        model: 'claude-sonnet-4-5-20250929',
+        // Default model - uses Claude Sonnet 4.5
+        // Available models: claude-opus-4, claude-sonnet-4-5, claude-haiku-4
+        // Format: {model-name}-{version}-{date}
+        // model: 'claude-sonnet-4-5-20250929',
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
       };
@@ -45,8 +50,10 @@ export class ClaudeSdkProvider implements ClaudeProvider {
       // Execute query and stream results
       console.log('🔄 SDK: Starting query stream...');
       let messageCount = 0;
+      const debugMessages: unknown[] = [];
 
       for await (const msg of query({ prompt, options: queryOptions })) {
+        debugMessages.push(msg);
         messageCount++;
         const msgType = (msg as Record<string, unknown>).type;
         const msgSubtype = (msg as Record<string, unknown>).subtype;
@@ -57,46 +64,80 @@ export class ClaudeSdkProvider implements ClaudeProvider {
         if (this.isSystemMessage(msg)) {
           if (msg.subtype === 'init' && msg.session_id) {
             console.log(`📋 SDK Session ID: ${msg.session_id}`);
+            console.log(`📋 SDK Session ID: ${msg.session_id}`);
             handlers.onSessionId?.(msg.session_id);
           }
         } else if (this.isAssistantMessage(msg)) {
-          // Handle content blocks from assistant messages
-          const content = msg.message?.content || msg.content;
-
-          if (content && Array.isArray(content)) {
-            for (const block of content) {
-              if (this.isTextBlock(block)) {
-                handlers.onThinking?.(false);
-                console.log(`🔄 SDK: Text: "${block.text.slice(0, 50)}..."`);
-                handlers.onChunk(block.text);
-              } else if (this.isToolUseBlock(block)) {
-                handlers.onThinking?.(false);
-                console.log(`🔄 SDK: Tool use: ${block.name}`);
-                handlers.onToolUse?.(block.name, JSON.stringify(block.input, null, 2));
-              } else if (this.isThinkingBlock(block)) {
-                console.log(`🔄 SDK: Thinking block`);
-                handlers.onThinking?.(true);
-              }
-            }
+          // Pass the full message object for state reconstruction
+          if (msg.message?.id) {
+            const rawMsg = msg.message;
+            // Adapt to Shared Message type
+            const adaptedMsg = {
+              id: rawMsg.id || `msg_${Date.now()}`,
+              role: 'assistant',
+              content: rawMsg.content,
+              timestamp: new Date().toISOString(), // SDK doesn't always provide timestamp in stream
+            };
+            handlers.onMessage?.(adaptedMsg);
           }
+
+          // Legacy streaming handlers removed to avoid duplication
+          // Now using onMessage exclusively for assistant state sync
         } else if (this.isContentBlockDelta(msg)) {
           // Streaming content deltas
-          const delta = (msg as { delta?: { type: string; text?: string } }).delta;
+          const delta = (msg as { delta?: { type: string; text?: string; thinking?: string } }).delta;
           if (delta?.type === 'text_delta' && delta.text) {
             handlers.onThinking?.(false);
             handlers.onChunk(delta.text);
           } else if (delta?.type === 'thinking_delta') {
             handlers.onThinking?.(true);
+            // Send thinking content if available
+            if (delta.thinking) {
+              handlers.onThinkingContent?.(delta.thinking);
+            }
           }
         } else if (this.isResultMessage(msg)) {
           handlers.onThinking?.(false);
           console.log(`🔄 SDK: Result message subtype=${msg.subtype}`);
           // Result message contains final text - but we already sent it via assistant messages
           // Only log for debugging, don't send duplicate
+        } else if (this.isUserMessage(msg)) {
+          console.log(`🔄 SDK: User message detected (Tool Result)`);
+
+          // Pass the full message object for state reconstruction
+          const rawMsg = msg.message || {};
+          const adaptedMsg = {
+            id: `msg_${Date.now()}`, // User/Tool messages might not have ID
+            role: 'user',
+            content: rawMsg.content,
+            timestamp: new Date().toISOString(),
+          };
+          handlers.onMessage?.(adaptedMsg);
+
+          const content = msg.message?.content;
+          if (content && Array.isArray(content)) {
+            for (const block of content) {
+              if (this.isToolResultBlock(block)) {
+                console.log(`🔄 SDK: Tool result for ${block.tool_use_id} (len: ${block.content?.length})`);
+                // Use a generic name or unknown since we don't know the tool name here easily
+                // without tracking tool_use_id map, but we can pass usage ID or just "Tool Result"
+                handlers.onToolResult?.(block.tool_use_id, block.content || '');
+              }
+            }
+          }
         }
       }
 
       console.log(`🔄 SDK: Stream ended after ${messageCount} messages`);
+
+      try {
+        const debugFilePath = join(process.cwd(), 'debug_sdk_messages.json');
+        writeFileSync(debugFilePath, JSON.stringify(debugMessages, null, 2));
+        console.log(`Debug SDK messages saved to ${debugFilePath}`);
+      } catch (e) {
+        console.error('Failed to save debug stream messages:', e);
+      }
+
       handlers.onThinking?.(false);
       handlers.onDone();
       console.log('🔄 SDK: onDone() called');
@@ -116,7 +157,7 @@ export class ClaudeSdkProvider implements ClaudeProvider {
   private isAssistantMessage(msg: unknown): msg is {
     type: 'assistant';
     content?: unknown[];
-    message?: { content: unknown[] };
+    message?: { id?: string; content: unknown[] };
   } {
     return typeof msg === 'object' && msg !== null && (msg as Record<string, unknown>).type === 'assistant';
   }
@@ -148,6 +189,21 @@ export class ClaudeSdkProvider implements ClaudeProvider {
   private isToolUseBlock(block: unknown): block is { type: 'tool_use'; name: string; input: unknown } {
     return (
       typeof block === 'object' && block !== null && (block as Record<string, unknown>).type === 'tool_use'
+    );
+  }
+
+  private isUserMessage(msg: unknown): msg is {
+    type: 'user';
+    message?: { content: unknown[] };
+  } {
+    return typeof msg === 'object' && msg !== null && (msg as Record<string, unknown>).type === 'user';
+  }
+
+  private isToolResultBlock(
+    block: unknown,
+  ): block is { type: 'tool_result'; tool_use_id: string; content?: string } {
+    return (
+      typeof block === 'object' && block !== null && (block as Record<string, unknown>).type === 'tool_result'
     );
   }
 }

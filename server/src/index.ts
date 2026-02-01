@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { validateToken } from "./middleware/auth";
-import { createWebSocketHandlers, type WSData } from "./websocket";
+import { createWebSocketHandlers, type WSData, getConnectionStats } from "./websocket";
 import { listProjects } from "./services/project";
 
 const PORT = process.env.PORT || 3001;
@@ -17,6 +17,29 @@ const app = new Elysia()
   .get("/api/projects", async () => {
     const projects = await listProjects();
     return { projects };
+  })
+  .get("/api/connections", () => {
+    const connections = getConnectionStats();
+    const projectRooms = new Map<string, number>();
+    const sessionRooms = new Map<string, number>();
+
+    connections.forEach((conn) => {
+      if (conn.project) {
+        projectRooms.set(conn.project, (projectRooms.get(conn.project) || 0) + 1);
+      }
+      if (conn.session) {
+        sessionRooms.set(conn.session, (sessionRooms.get(conn.session) || 0) + 1);
+      }
+    });
+
+    return {
+      total: connections.length,
+      connections,
+      rooms: {
+        projects: Object.fromEntries(projectRooms),
+        sessions: Object.fromEntries(sessionRooms),
+      },
+    };
   });
 
 const wsHandlers = createWebSocketHandlers();
