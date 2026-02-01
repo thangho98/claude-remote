@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import type { TokenUsage } from "@shared/types";
+import { useState, useRef, useEffect, useCallback } from "react";
+import type { TokenUsage, SlashCommand } from "@shared/types";
 
 interface MessageInputProps {
   onSend: (content: string) => void;
@@ -8,6 +8,7 @@ interface MessageInputProps {
   currentFile?: string | null;
   currentModel?: string | null;
   tokenUsage?: TokenUsage | null;
+  commands?: SlashCommand[];
 }
 
 function formatTokens(count: number): string {
@@ -16,7 +17,6 @@ function formatTokens(count: number): string {
   return count.toString();
 }
 
-// Claude Code uses ~150K effective context to leave room for output generation
 const CONTEXT_WINDOW = 150000;
 
 function ContextPieChart({
@@ -28,13 +28,11 @@ function ContextPieChart({
   current: number;
   max: number;
 }) {
-  // SVG pie chart using stroke-dasharray technique
   const radius = 6;
   const circumference = 2 * Math.PI * radius;
   const filled = (percentage / 100) * circumference;
   const remaining = circumference - filled;
 
-  // Color based on usage
   let color = "text-green-400";
   let bgColor = "bg-green-400";
   if (percentage > 70) {
@@ -48,7 +46,6 @@ function ContextPieChart({
   return (
     <div className="relative group">
       <svg className={`w-4 h-4 ${color} cursor-pointer`} viewBox="0 0 16 16">
-        {/* Background circle */}
         <circle
           cx="8"
           cy="8"
@@ -58,7 +55,6 @@ function ContextPieChart({
           strokeWidth="3"
           opacity="0.2"
         />
-        {/* Filled arc */}
         <circle
           cx="8"
           cy="8"
@@ -71,7 +67,6 @@ function ContextPieChart({
           strokeLinecap="round"
         />
       </svg>
-      {/* Popover */}
       <div className="absolute bottom-full right-0 mb-2 px-3 py-2 bg-gray-700 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
         <div className="text-xs text-gray-200 font-medium mb-1">
           Context Window
@@ -82,7 +77,6 @@ function ContextPieChart({
             {formatTokens(current)} / {formatTokens(max)}
           </span>
         </div>
-        {/* Arrow */}
         <div className="absolute top-full right-1 border-4 border-transparent border-t-gray-700" />
       </div>
     </div>
@@ -97,6 +91,25 @@ function getModelDisplayName(model: string | null | undefined): string {
   return model;
 }
 
+function getSourceBadge(source: SlashCommand["source"]) {
+  switch (source) {
+    case "builtin":
+      return null;
+    case "project":
+      return (
+        <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-blue-500/20 text-blue-400 rounded">
+          project
+        </span>
+      );
+    case "user":
+      return (
+        <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-purple-500/20 text-purple-400 rounded">
+          user
+        </span>
+      );
+  }
+}
+
 export function MessageInput({
   onSend,
   disabled,
@@ -104,52 +117,120 @@ export function MessageInput({
   currentFile,
   currentModel,
   tokenUsage,
+  commands = [],
 }: MessageInputProps) {
   const [hasContent, setHasContent] = useState(false);
+  const [showCommands, setShowCommands] = useState(false);
+  const [commandFilter, setCommandFilter] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Check content and update button state - works on iOS
-  const updateHasContent = () => {
+  // Filter commands based on input
+  const filteredCommands = commands.filter((cmd) =>
+    cmd.name.toLowerCase().includes(commandFilter.toLowerCase())
+  );
+
+  // Reset selected index when filter changes
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [commandFilter]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
+        setShowCommands(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const updateHasContent = useCallback(() => {
     const value = textareaRef.current?.value || "";
-    const has = value.trim().length > 0;
-    console.log("📝 Input changed, hasContent:", has, "value:", value.slice(0, 20));
-    setHasContent(has);
-  };
+    setHasContent(value.trim().length > 0);
+
+    // Check for slash command trigger
+    if (value.startsWith("/")) {
+      const filter = value.slice(1).split(" ")[0];
+      setCommandFilter(filter);
+      setShowCommands(true);
+    } else {
+      setShowCommands(false);
+      setCommandFilter("");
+    }
+  }, []);
+
+  const insertCommand = useCallback((commandName: string) => {
+    if (textareaRef.current) {
+      textareaRef.current.value = `/${commandName} `;
+      textareaRef.current.focus();
+      setShowCommands(false);
+      setCommandFilter("");
+      setHasContent(true);
+    }
+  }, []);
 
   const handleSubmit = () => {
     const value = textareaRef.current?.value || "";
-    console.log("🔘 Submit clicked, value:", value.slice(0, 30), "disabled:", disabled, "hasContent:", hasContent);
     if (value.trim() && !disabled) {
-      console.log("📤 Sending message:", value.trim().slice(0, 50));
       onSend(value.trim());
-      // Reset textarea
       if (textareaRef.current) {
         textareaRef.current.value = "";
         textareaRef.current.style.height = "auto";
       }
       setHasContent(false);
+      setShowCommands(false);
     }
   };
 
-  // Handle touch for iOS
   const handleTouchEnd = (e: React.TouchEvent) => {
     e.preventDefault();
     handleSubmit();
   };
 
-  // Check if mobile device (no Shift key available)
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // On desktop: Enter submits, Shift+Enter for new line
-    // On mobile: Enter creates new line, use button to submit
+    // Handle command dropdown navigation
+    if (showCommands && filteredCommands.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIndex((prev) =>
+          prev < filteredCommands.length - 1 ? prev + 1 : 0
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex((prev) =>
+          prev > 0 ? prev - 1 : filteredCommands.length - 1
+        );
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        insertCommand(filteredCommands[selectedIndex].name);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowCommands(false);
+        return;
+      }
+    }
+
+    // Normal submit handling
     if (e.key === "Enter" && !e.shiftKey && !isMobile) {
       e.preventDefault();
       handleSubmit();
     }
   };
 
-  // Auto-resize textarea on input
   const handleInput = () => {
     const textarea = textareaRef.current;
     if (textarea) {
@@ -160,7 +241,16 @@ export function MessageInput({
     updateHasContent();
   };
 
-  // Get filename from path
+  const handleCommandButtonClick = () => {
+    if (textareaRef.current) {
+      textareaRef.current.value = "/";
+      textareaRef.current.focus();
+      setShowCommands(true);
+      setCommandFilter("");
+      setHasContent(true);
+    }
+  };
+
   const getFileName = (path: string) => {
     return path.split("/").pop() || path;
   };
@@ -169,13 +259,42 @@ export function MessageInput({
 
   return (
     <div className="p-2 lg:p-3 border-t border-gray-700 bg-gray-900">
-      {/* Keyboard Shortcut Hint - only on desktop */}
+      {/* Keyboard Shortcut Hint */}
       <div className="hidden lg:block text-center text-xs text-gray-500 mb-2">
         ⌘ Esc to focus or unfocus Claude
       </div>
 
       {/* Main Input Container */}
-      <div className="bg-gray-800 border border-gray-700 rounded-lg focus-within:border-gray-500 transition-colors">
+      <div className="relative bg-gray-800 border border-gray-700 rounded-lg focus-within:border-gray-500 transition-colors">
+        {/* Command Autocomplete Dropdown */}
+        {showCommands && filteredCommands.length > 0 && (
+          <div
+            ref={dropdownRef}
+            className="absolute bottom-full left-0 right-0 mb-1 max-h-64 overflow-y-auto bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50"
+          >
+            <div className="p-2 text-xs text-gray-400 border-b border-gray-700">
+              Slash Commands
+            </div>
+            {filteredCommands.map((cmd, index) => (
+              <button
+                key={cmd.name}
+                onClick={() => insertCommand(cmd.name)}
+                className={`w-full px-3 py-2 flex items-center gap-3 text-left transition-colors ${
+                  index === selectedIndex
+                    ? "bg-gray-700 text-white"
+                    : "text-gray-300 hover:bg-gray-700/50"
+                }`}
+              >
+                <span className="font-mono text-orange-400">/{cmd.name}</span>
+                <span className="text-sm text-gray-400 truncate flex-1">
+                  {cmd.description}
+                </span>
+                {getSourceBadge(cmd.source)}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Input Row */}
         <div className="flex items-end p-2 lg:p-3 gap-2 lg:gap-3">
           <textarea
@@ -187,7 +306,9 @@ export function MessageInput({
             rows={1}
             autoComplete="off"
             autoCorrect="on"
+            spellCheck={false}
             className="flex-1 bg-transparent text-white placeholder-gray-500 resize-none outline-none text-sm disabled:opacity-50"
+            style={{ caretColor: "#d97757" }}
           />
 
           {/* Action Buttons */}
@@ -216,8 +337,11 @@ export function MessageInput({
             {/* Command Button */}
             <button
               type="button"
-              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded hover:bg-gray-700 font-mono text-sm"
-              title="Commands"
+              onClick={handleCommandButtonClick}
+              className={`p-1.5 transition-colors rounded hover:bg-gray-700 font-mono text-sm ${
+                showCommands ? "text-orange-400" : "text-gray-400 hover:text-white"
+              }`}
+              title="Slash commands"
             >
               /
             </button>
@@ -250,12 +374,10 @@ export function MessageInput({
 
         {/* Context Bar */}
         <div className="flex items-center gap-2 lg:gap-3 px-2 lg:px-3 pb-2 text-xs text-gray-500">
-          {/* Bypass Permissions */}
           <span className="hover:text-gray-300 cursor-pointer transition-colors">
             » Bypass permissions
           </span>
 
-          {/* Current File */}
           {currentFile && (
             <span className="flex items-center gap-1 text-gray-400">
               <svg
@@ -275,15 +397,12 @@ export function MessageInput({
             </span>
           )}
 
-          {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Model */}
           {modelName && (
             <span className="text-orange-400 font-medium">{modelName}</span>
           )}
 
-          {/* Token Usage with Pie Chart */}
           {tokenUsage && (
             <span className="flex items-center gap-1.5 text-gray-400">
               <ContextPieChart

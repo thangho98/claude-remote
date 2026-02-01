@@ -1,0 +1,199 @@
+{
+  "meta": {
+    "schema_version": "1.1.0",
+    "awf_version": "3.3.0",
+    "last_updated": "2026-02-01T14:30:00+07:00"
+  },
+  "project": {
+    "name": "claude-remote",
+    "type": "fullstack-web",
+    "description": "Web-based remote interface for Claude Code CLI, allowing mobile/browser access to Claude Code sessions",
+    "status": "active-development",
+    "repository": "local"
+  },
+  "tech_stack": {
+    "frontend": {
+      "framework": "React 18.3",
+      "bundler": "Vite 6",
+      "styling": "TailwindCSS 3.4",
+      "state": "Zustand 5.0",
+      "language": "TypeScript 5.7",
+      "markdown": "react-markdown + remark-gfm"
+    },
+    "backend": {
+      "runtime": "Bun",
+      "framework": "Elysia 1.2",
+      "websocket": "Bun native WebSocket",
+      "language": "TypeScript"
+    },
+    "claude_integration": {
+      "primary": "Claude CLI (subprocess)",
+      "secondary": "Claude Agent SDK 0.2.29 (alternative)",
+      "pattern": "Provider abstraction layer"
+    },
+    "architecture": {
+      "type": "monorepo",
+      "workspaces": ["server", "client", "shared"],
+      "communication": "WebSocket (real-time bidirectional)"
+    }
+  },
+  "api_endpoints": {
+    "websocket_events": {
+      "client_to_server": [
+        { "type": "auth", "params": "token", "description": "Authenticate client" },
+        { "type": "message", "params": "content", "description": "Send message to Claude" },
+        { "type": "project:switch", "params": "path", "description": "Switch working directory" },
+        { "type": "file:read", "params": "path", "description": "Read file content" },
+        { "type": "file:list", "params": "path", "description": "List directory contents" },
+        { "type": "session:list", "params": "none", "description": "List Claude sessions" },
+        { "type": "session:switch", "params": "sessionId", "description": "Switch to session" },
+        { "type": "session:resume", "params": "sessionId", "description": "Resume session" },
+        { "type": "commands:list", "params": "none", "description": "List slash commands" }
+      ],
+      "server_to_client": [
+        { "type": "auth:success", "data": "user object" },
+        { "type": "auth:error", "data": "error message" },
+        { "type": "message:chunk", "data": "streaming content + id" },
+        { "type": "message:done", "data": "id" },
+        { "type": "message:error", "data": "error + id" },
+        { "type": "message:thinking", "data": "isThinking boolean" },
+        { "type": "terminal:output", "data": "tool output" },
+        { "type": "file:content", "data": "path + content" },
+        { "type": "file:tree", "data": "path + FileNode tree" },
+        { "type": "project:list", "data": "Project[]" },
+        { "type": "project:current", "data": "Project" },
+        { "type": "session:list", "data": "Session[]" },
+        { "type": "session:current", "data": "Session | null" },
+        { "type": "session:info", "data": "model + TokenUsage" },
+        { "type": "session:messages", "data": "Message[]" },
+        { "type": "commands:list", "data": "SlashCommand[]" }
+      ]
+    }
+  },
+  "features": [
+    {
+      "name": "Remote Claude Access",
+      "status": "implemented",
+      "description": "Access Claude Code from any browser/mobile device"
+    },
+    {
+      "name": "Session Management",
+      "status": "implemented",
+      "description": "List, switch, resume Claude sessions per project"
+    },
+    {
+      "name": "File Explorer",
+      "status": "implemented",
+      "description": "Browse and view project files"
+    },
+    {
+      "name": "Real-time Streaming",
+      "status": "implemented",
+      "description": "Stream Claude responses via WebSocket"
+    },
+    {
+      "name": "Thinking Indicator",
+      "status": "implemented",
+      "description": "Show Claude extended thinking status"
+    },
+    {
+      "name": "Slash Commands Autocomplete",
+      "status": "implemented",
+      "description": "Autocomplete dropdown for slash commands (builtin/project/user)"
+    },
+    {
+      "name": "Provider Abstraction",
+      "status": "implemented",
+      "description": "Switch between CLI and SDK backends"
+    },
+    {
+      "name": "iOS Mobile Support",
+      "status": "implemented",
+      "description": "Touch handlers, UUID fallback for older Safari"
+    }
+  ],
+  "knowledge_items": {
+    "patterns": [
+      {
+        "name": "Provider Pattern",
+        "description": "Abstraction layer for Claude integration (CLI vs SDK)",
+        "files": ["server/src/claude/types.ts", "server/src/claude/providers/"]
+      },
+      {
+        "name": "WebSocket Event Bus",
+        "description": "Typed bidirectional events via shared/types.ts",
+        "files": ["shared/types.ts", "server/src/websocket.ts", "client/src/hooks/useWebSocket.ts"]
+      },
+      {
+        "name": "Zustand Store",
+        "description": "Simple state management without boilerplate",
+        "files": ["client/src/stores/appStore.ts"]
+      }
+    ],
+    "gotchas": [
+      {
+        "issue": "crypto.randomUUID not available on older iOS Safari",
+        "solution": "Fallback to custom UUID generator using Math.random",
+        "file": "client/src/App.tsx"
+      },
+      {
+        "issue": "iOS Safari touch events need explicit handlers",
+        "solution": "Added onTouchEnd alongside onClick for send button",
+        "file": "client/src/components/MessageInput.tsx"
+      },
+      {
+        "issue": "Enter key submits on mobile but prevents multiline input",
+        "solution": "Check window width to disable Enter submission on mobile",
+        "file": "client/src/components/MessageInput.tsx"
+      },
+      {
+        "issue": "Claude SDK requires ANTHROPIC_API_KEY, CLI uses OAuth",
+        "solution": "Provider pattern allows switching; CLI is default fallback",
+        "file": "server/src/claude/providers/index.ts"
+      }
+    ],
+    "conventions": [
+      {
+        "rule": "All WebSocket events typed in shared/types.ts",
+        "reason": "Type safety between client and server"
+      },
+      {
+        "rule": "Provider implementations in server/src/claude/providers/",
+        "reason": "Separation of concerns for Claude backends"
+      },
+      {
+        "rule": "Slash commands discovered from .claude/commands/ and .claude/skills/",
+        "reason": "Compatible with Claude Code CLI conventions"
+      }
+    ]
+  },
+  "file_structure": {
+    "server/src/": {
+      "index.ts": "Entry point, Elysia server setup",
+      "websocket.ts": "WebSocket event handlers",
+      "claude/types.ts": "Provider interface definitions",
+      "claude/session.ts": "Session management",
+      "claude/providers/cli.ts": "CLI subprocess provider",
+      "claude/providers/sdk.ts": "Claude Agent SDK provider",
+      "claude/providers/index.ts": "Provider factory",
+      "services/commands.ts": "Slash command discovery",
+      "services/session.ts": "Session listing and info",
+      "services/project.ts": "Project discovery",
+      "services/file.ts": "File operations",
+      "middleware/auth.ts": "Authentication"
+    },
+    "client/src/": {
+      "App.tsx": "Main app component, WebSocket handling",
+      "components/MessageInput.tsx": "Chat input with slash command autocomplete",
+      "components/ChatPanel.tsx": "Chat container",
+      "components/MessageList.tsx": "Message display",
+      "components/SessionPanel.tsx": "Session list sidebar",
+      "components/FileExplorer.tsx": "File tree browser",
+      "components/FileViewer.tsx": "File content viewer",
+      "stores/appStore.ts": "Zustand state store"
+    },
+    "shared/": {
+      "types.ts": "Shared types for WebSocket events and domain models"
+    }
+  }
+}

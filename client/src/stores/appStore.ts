@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Message, Project, FileNode, Session, TokenUsage } from "@shared/types";
+import type { Message, Project, FileNode, Session, TokenUsage, SlashCommand } from "@shared/types";
 
 interface AppState {
   // Auth
@@ -35,6 +35,9 @@ interface AppState {
   // UI
   activeTab: "chat" | "file" | "files" | "terminal";
   sidebarOpen: boolean;
+
+  // Commands
+  commands: SlashCommand[];
 }
 
 interface AppActions {
@@ -78,6 +81,9 @@ interface AppActions {
   // UI
   setActiveTab: (tab: "chat" | "file" | "files" | "terminal") => void;
   toggleSidebar: () => void;
+
+  // Commands
+  setCommands: (commands: SlashCommand[]) => void;
 }
 
 export const useAppStore = create<AppState & AppActions>()(
@@ -101,6 +107,7 @@ export const useAppStore = create<AppState & AppActions>()(
       tokenUsage: null,
       activeTab: "chat",
       sidebarOpen: true,
+      commands: [],
 
       // Auth
       setToken: (token) => set({ token }),
@@ -132,7 +139,13 @@ export const useAppStore = create<AppState & AppActions>()(
       // Messages
       setMessages: (messages) => set({ messages }),
       addMessage: (message) =>
-        set((state) => ({ messages: [...state.messages, message] })),
+        set((state) => {
+          // Prevent duplicate messages by checking if ID already exists
+          if (state.messages.some((m) => m.id === message.id)) {
+            return state;
+          }
+          return { messages: [...state.messages, message] };
+        }),
 
       updateMessage: (id, content) =>
         set((state) => ({
@@ -175,6 +188,9 @@ export const useAppStore = create<AppState & AppActions>()(
       // UI
       setActiveTab: (activeTab) => set({ activeTab }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+
+      // Commands
+      setCommands: (commands) => set({ commands }),
     }),
     {
       name: "claude-remote-storage",

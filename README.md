@@ -8,8 +8,11 @@ Web interface for Claude Code CLI - access from mobile or any browser.
 - **File Explorer** - Browse and view project files
 - **Terminal Output** - See commands Claude executes
 - **Project Selector** - Switch between multiple projects
-- **Mobile Responsive** - Works on iPhone, iPad, desktop
+- **Session Management** - List, switch, resume Claude sessions
+- **Slash Commands** - Autocomplete for `/commands` with keyboard navigation
+- **Mobile Responsive** - Works on iPhone, iPad, desktop (iOS Safari supported)
 - **Dark Theme** - Developer-friendly interface
+- **Provider Abstraction** - Switch between Claude CLI and SDK backends
 
 ## Prerequisites
 
@@ -63,30 +66,42 @@ For secure remote access:
 
 ```
 claude-remote/
-├── client/          # React frontend (Vite)
-│   ├── src/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   └── stores/
-│   └── package.json
-├── server/          # Bun backend (Hono + WebSocket)
-│   ├── src/
-│   │   ├── claude/
-│   │   ├── services/
-│   │   └── middleware/
-│   └── package.json
-├── shared/          # Shared TypeScript types
-└── package.json     # Workspace root
+├── client/              # React frontend (Vite)
+│   └── src/
+│       ├── components/  # UI components
+│       ├── hooks/       # Custom React hooks
+│       └── stores/      # Zustand state stores
+├── server/              # Bun backend (Elysia + WebSocket)
+│   └── src/
+│       ├── claude/      # Claude integration
+│       │   ├── providers/   # CLI & SDK implementations
+│       │   └── types.ts     # Provider interface
+│       ├── services/    # Business logic
+│       └── middleware/  # Auth etc.
+├── shared/              # Shared TypeScript types
+│   └── types.ts         # WebSocket event types
+├── .brain/              # Project knowledge (AI context)
+└── docs/plans/          # Design & implementation specs
 ```
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | React, Vite, TypeScript, Tailwind CSS |
-| Backend | Bun, Hono, WebSocket |
-| State | Zustand |
-| Claude | Claude CLI (via subprocess) |
+| Frontend | React 18, Vite 6, TypeScript, Tailwind CSS |
+| Backend | Bun, Elysia, WebSocket |
+| State | Zustand 5 |
+| Claude | CLI (default) or Agent SDK (via CLAUDE_PROVIDER env) |
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Server port | 3001 |
+| `AUTH_TOKEN` | Authentication token | required |
+| `DEFAULT_PROJECT_DIR` | Projects directory | ~/projects |
+| `CLAUDE_PROVIDER` | `cli` or `sdk` | cli |
+| `ANTHROPIC_API_KEY` | Required if using SDK | - |
 
 ## Development
 

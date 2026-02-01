@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
-import type { Message, TokenUsage, Session } from "@shared/types";
+import type { Message, TokenUsage, Session, SlashCommand } from "@shared/types";
 
 interface ChatPanelProps {
   messages: Message[];
@@ -17,6 +17,8 @@ interface ChatPanelProps {
   onSessionSelect?: (session: Session) => void;
   onNewSession?: () => void;
   showSessionSelector?: boolean;
+  // Slash commands
+  commands?: SlashCommand[];
 }
 
 function formatRelativeTime(dateString: string): string {
@@ -155,6 +157,7 @@ export function ChatPanel({
   onSessionSelect,
   onNewSession,
   showSessionSelector,
+  commands,
 }: ChatPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showSessionModal, setShowSessionModal] = useState(false);
@@ -272,6 +275,7 @@ export function ChatPanel({
         currentFile={currentFile}
         currentModel={currentModel}
         tokenUsage={tokenUsage}
+        commands={commands}
       />
     </div>
   );

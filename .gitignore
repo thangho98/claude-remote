@@ -29,3 +29,6 @@ npm-debug.log*
 .parcel-cache/
 
 .playwright-mcp/
+
+# Brain (session is local state, brain.json can be shared)
+.brain/session.json

@@ -8,7 +8,8 @@ export type WSClientEvent =
   | { type: "session:list" }
   | { type: "session:switch"; sessionId: string }
   | { type: "session:new" }
-  | { type: "session:resume"; sessionId: string };
+  | { type: "session:resume"; sessionId: string }
+  | { type: "commands:list" };
 
 // WebSocket Events: Server → Client
 export type WSServerEvent =
@@ -26,7 +27,8 @@ export type WSServerEvent =
   | { type: "session:list"; sessions: Session[] }
   | { type: "session:current"; session: Session | null }
   | { type: "session:info"; model: string; usage: TokenUsage }
-  | { type: "session:messages"; messages: Message[] };
+  | { type: "session:messages"; messages: Message[] }
+  | { type: "commands:list"; commands: SlashCommand[] };
 
 // Domain Types
 export interface Project {
@@ -119,4 +121,10 @@ export interface AppState {
   currentSession: Session | null;
   currentModel: string | null;
   tokenUsage: TokenUsage | null;
+}
+
+export interface SlashCommand {
+  name: string;
+  description: string;
+  source: "builtin" | "project" | "user";
 }

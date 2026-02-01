@@ -53,6 +53,8 @@ function App() {
     activeTab,
     setActiveTab,
     logout,
+    commands,
+    setCommands,
   } = useAppStore();
 
   // Handle incoming WebSocket messages
@@ -144,6 +146,10 @@ function App() {
         case "session:messages":
           setMessages(event.messages);
           break;
+
+        case "commands:list":
+          setCommands(event.commands);
+          break;
       }
     },
     [
@@ -164,6 +170,7 @@ function App() {
       setCurrentSession,
       setCurrentModel,
       setTokenUsage,
+      setCommands,
     ]
   );
 
@@ -198,8 +205,11 @@ function App() {
     if (project) {
       setCurrentProject(project);
       send({ type: "project:switch", path: project.path });
-      // Request session list for new project
-      setTimeout(() => send({ type: "session:list" }), 100);
+      // Request session list and commands for new project
+      setTimeout(() => {
+        send({ type: "session:list" });
+        send({ type: "commands:list" });
+      }, 100);
     }
   };
 
@@ -269,6 +279,24 @@ function App() {
       connect(token);
     }
   }, []);
+
+  // Sync project and sessions after authentication
+  useEffect(() => {
+    if (authenticated && isConnected) {
+      // Request commands (builtin + user level)
+      send({ type: "commands:list" });
+
+      if (currentProject) {
+        // Re-sync project with server
+        send({ type: "project:switch", path: currentProject.path });
+        // Request session list and project commands
+        setTimeout(() => {
+          send({ type: "session:list" });
+          send({ type: "commands:list" });
+        }, 100);
+      }
+    }
+  }, [authenticated, isConnected]);
 
 
   // Show auth screen if not authenticated
@@ -363,6 +391,7 @@ function App() {
               currentFile={selectedFile?.path}
               currentModel={currentModel}
               tokenUsage={tokenUsage}
+              commands={commands}
             />
           </div>
         </div>
@@ -379,6 +408,7 @@ function App() {
             currentFile={selectedFile?.path}
             currentModel={currentModel}
             tokenUsage={tokenUsage}
+            commands={commands}
             // Session selector in mobile chat
             showSessionSelector
             sessions={sessions}

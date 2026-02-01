@@ -3,7 +3,8 @@ import type { WSClientEvent, WSServerEvent } from "../../shared/types";
 import { getFileTree, readFileContent, isPathSafe } from "./services/file";
 import { listProjects } from "./services/project";
 import { listSessions, getSessionInfo, getSessionMessages } from "./services/session";
-import { sendToClaude } from "./claude/sdk";
+import { listCommands } from "./services/commands";
+import { getClaudeProvider } from "./claude/providers";
 import { getOrCreateSession } from "./claude/session";
 
 export interface WSData {
@@ -81,6 +82,10 @@ async function handleEvent(ws: ServerWebSocket<WSData>, event: WSClientEvent) {
       await handleSessionSwitch(ws, event.sessionId);
       break;
 
+    case "commands:list":
+      await handleCommandsList(ws);
+      break;
+
     default:
       console.warn("Unknown event type:", event);
   }
@@ -99,10 +104,12 @@ async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
   console.log(`💬 Message received in ${session.workingDirectory}: "${content.slice(0, 50)}..."${sessionId ? ` (resuming session ${sessionId})` : ""}`);
 
   try {
-    await sendToClaude(
-      content,
-      session.workingDirectory,
-      {
+    const provider = await getClaudeProvider();
+    await provider.query({
+      prompt: content,
+      workingDirectory: session.workingDirectory,
+      sessionId,
+      handlers: {
         onChunk: (chunk) => {
           send(ws, { type: "message:chunk", content: chunk, id });
         },
@@ -121,8 +128,7 @@ async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
           send(ws, { type: "message:thinking", isThinking });
         },
       },
-      sessionId
-    );
+    });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     send(ws, { type: "message:error", error: errorMessage, id });
@@ -205,6 +211,17 @@ async function handleSessionSwitch(ws: ServerWebSocket<WSData>, sessionId: strin
   }));
   send(ws, { type: "session:messages", messages });
   console.log(`📨 Sent ${messages.length} messages for session ${sessionId}`);
+}
+
+async function handleCommandsList(ws: ServerWebSocket<WSData>) {
+  try {
+    const commands = await listCommands(ws.data.workingDirectory || undefined);
+    send(ws, { type: "commands:list", commands });
+    console.log(`📋 Sent ${commands.length} commands`);
+  } catch (error) {
+    console.error("Failed to list commands:", error);
+    send(ws, { type: "commands:list", commands: [] });
+  }
 }
 
 function send(ws: ServerWebSocket<WSData>, event: WSServerEvent) {
