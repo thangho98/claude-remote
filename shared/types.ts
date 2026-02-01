@@ -28,6 +28,7 @@ export type WSServerEvent =
   | { type: "session:current"; session: Session | null }
   | { type: "session:info"; model: string; usage: TokenUsage }
   | { type: "session:messages"; messages: Message[] }
+  | { type: "session:id"; sessionId: string }
   | { type: "commands:list"; commands: SlashCommand[] };
 
 // Domain Types

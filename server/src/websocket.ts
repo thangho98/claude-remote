@@ -113,9 +113,18 @@ async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
         onChunk: (chunk) => {
           send(ws, { type: "message:chunk", content: chunk, id });
         },
-        onDone: () => {
+        onDone: async () => {
           send(ws, { type: "message:done", id });
           console.log(`✅ Message ${id} completed`);
+
+          // Refresh session list after message completes
+          try {
+            const sessions = await listSessions(ws.data.workingDirectory!);
+            send(ws, { type: "session:list", sessions });
+            console.log(`🔄 Refreshed session list (${sessions.length} sessions)`);
+          } catch (error) {
+            console.error("Failed to refresh sessions:", error);
+          }
         },
         onError: (error) => {
           send(ws, { type: "message:error", error, id });
@@ -126,6 +135,11 @@ async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
         },
         onThinking: (isThinking) => {
           send(ws, { type: "message:thinking", isThinking });
+        },
+        onSessionId: (newSessionId) => {
+          ws.data.currentSessionId = newSessionId;
+          send(ws, { type: "session:id", sessionId: newSessionId });
+          console.log(`📋 Updated current session: ${newSessionId}`);
         },
       },
     });
@@ -194,8 +208,11 @@ async function handleSessionSwitch(ws: ServerWebSocket<WSData>, sessionId: strin
     send(ws, { type: "session:info", model: info.model, usage: info.usage });
   }
 
-  // Find session in list and send as current
+  // Refresh and send session list
   const sessions = await listSessions(ws.data.workingDirectory);
+  send(ws, { type: "session:list", sessions });
+
+  // Find and send current session
   const currentSession = sessions.find((s) => s.id === sessionId);
   if (currentSession) {
     send(ws, { type: "session:current", session: currentSession });

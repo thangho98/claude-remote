@@ -277,7 +277,7 @@ export function MessageInput({
             </div>
             {filteredCommands.map((cmd, index) => (
               <button
-                key={cmd.name}
+                key={`${cmd.source}-${cmd.name}`}
                 onClick={() => insertCommand(cmd.name)}
                 className={`w-full px-3 py-2 flex items-center gap-3 text-left transition-colors ${
                   index === selectedIndex

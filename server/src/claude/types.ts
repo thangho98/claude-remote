@@ -9,6 +9,7 @@ export interface ClaudeMessageHandler {
   onError: (error: string) => void;
   onToolUse?: (tool: string, input: string) => void;
   onThinking?: (isThinking: boolean) => void;
+  onSessionId?: (sessionId: string) => void;
 }
 
 export interface ClaudeQueryOptions {

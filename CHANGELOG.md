@@ -12,10 +12,12 @@ All notable changes to claude-remote will be documented in this file.
 - **Mobile-friendly Input** - Touch event handlers and responsive keyboard behavior
 
 ### Changed
+- **SDK V2 API** - Updated to use `unstable_v2_createSession` (no API key needed, uses OAuth)
 - Migrated WebSocket message handler to use provider pattern
 - Commands automatically fetched on authentication and project switch
 
 ### Fixed
+- **Duplicate Key Warning** - Fixed React duplicate key error in MessageList by adding ID check in `addMessage`
 - **iOS Safari UUID** - Added fallback for `crypto.randomUUID` not available on older iOS
 - **iOS Touch Events** - Send button now responds to touch via `onTouchEnd`
 - **Mobile Multiline Input** - Disabled Enter-to-submit on mobile to allow multiline

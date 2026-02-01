@@ -1,6 +1,33 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-dark-50: #f9fafb;
+  --color-dark-100: #f3f4f6;
+  --color-dark-200: #e5e7eb;
+  --color-dark-300: #d1d5db;
+  --color-dark-400: #9ca3af;
+  --color-dark-500: #6b7280;
+  --color-dark-600: #4b5563;
+  --color-dark-700: #374151;
+  --color-dark-800: #1f2937;
+  --color-dark-900: #111827;
+  --color-dark-950: #030712;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
 
 /* Custom scrollbar for dark theme */
 ::-webkit-scrollbar {

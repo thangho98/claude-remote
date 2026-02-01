@@ -147,6 +147,11 @@ function App() {
           setMessages(event.messages);
           break;
 
+        case "session:id":
+          // New session created - update currentSessionId for future messages
+          console.log(`📋 New session ID: ${event.sessionId}`);
+          break;
+
         case "commands:list":
           setCommands(event.commands);
           break;

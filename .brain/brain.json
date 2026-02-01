@@ -2,7 +2,7 @@
   "meta": {
     "schema_version": "1.1.0",
     "awf_version": "3.3.0",
-    "last_updated": "2026-02-01T14:30:00+07:00"
+    "last_updated": "2026-02-01T14:20:00+07:00"
   },
   "project": {
     "name": "claude-remote",
@@ -28,8 +28,9 @@
     },
     "claude_integration": {
       "primary": "Claude CLI (subprocess)",
-      "secondary": "Claude Agent SDK 0.2.29 (alternative)",
-      "pattern": "Provider abstraction layer"
+      "secondary": "Claude Agent SDK V2 (no API key needed)",
+      "pattern": "Provider abstraction layer",
+      "note": "Both providers use Claude CLI OAuth auth"
     },
     "architecture": {
       "type": "monorepo",
@@ -132,6 +133,11 @@
     ],
     "gotchas": [
       {
+        "issue": "Stale closure in useCallback causes duplicate messages",
+        "solution": "Check for duplicate IDs in Zustand addMessage instead of relying on stale messages array",
+        "file": "client/src/stores/appStore.ts"
+      },
+      {
         "issue": "crypto.randomUUID not available on older iOS Safari",
         "solution": "Fallback to custom UUID generator using Math.random",
         "file": "client/src/App.tsx"
@@ -147,9 +153,9 @@
         "file": "client/src/components/MessageInput.tsx"
       },
       {
-        "issue": "Claude SDK requires ANTHROPIC_API_KEY, CLI uses OAuth",
-        "solution": "Provider pattern allows switching; CLI is default fallback",
-        "file": "server/src/claude/providers/index.ts"
+        "issue": "SDK V2 API uses unstable_ prefix",
+        "solution": "Use unstable_v2_createSession, unstable_v2_resumeSession - uses same OAuth as CLI",
+        "file": "server/src/claude/providers/sdk.ts"
       }
     ],
     "conventions": [
