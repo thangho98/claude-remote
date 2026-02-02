@@ -84,6 +84,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string | ContentBlock[];
   timestamp: string;
+  sessionId?: string;
   isStreaming?: boolean;
 }
 

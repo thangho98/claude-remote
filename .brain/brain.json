@@ -2,7 +2,7 @@
   "meta": {
     "schema_version": "1.1.0",
     "awf_version": "3.3.0",
-    "last_updated": "2026-02-01T23:45:00+07:00"
+    "last_updated": "2026-02-03T00:04:00+07:00"
   },
   "project": {
     "name": "claude-remote",
@@ -34,43 +34,144 @@
     },
     "architecture": {
       "type": "monorepo",
-      "workspaces": ["server", "client", "shared"],
+      "workspaces": [
+        "server",
+        "client",
+        "shared"
+      ],
       "communication": "WebSocket (real-time bidirectional)"
     }
   },
   "api_endpoints": {
     "websocket_events": {
       "client_to_server": [
-        { "type": "auth", "params": "token", "description": "Authenticate client" },
-        { "type": "message", "params": "content", "description": "Send message to Claude" },
-        { "type": "project:switch", "params": "path", "description": "Switch working directory" },
-        { "type": "file:read", "params": "path", "description": "Read file content" },
-        { "type": "file:list", "params": "path", "description": "List directory contents" },
-        { "type": "session:list", "params": "none", "description": "List Claude sessions" },
-        { "type": "session:switch", "params": "sessionId", "description": "Switch to session" },
-        { "type": "session:resume", "params": "sessionId", "description": "Resume session" },
-        { "type": "commands:list", "params": "none", "description": "List slash commands" }
+        {
+          "type": "auth",
+          "params": "token",
+          "description": "Authenticate client"
+        },
+        {
+          "type": "message",
+          "params": "content",
+          "description": "Send message to Claude"
+        },
+        {
+          "type": "project:switch",
+          "params": "path",
+          "description": "Switch working directory"
+        },
+        {
+          "type": "file:read",
+          "params": "path",
+          "description": "Read file content"
+        },
+        {
+          "type": "file:list",
+          "params": "path",
+          "description": "List directory contents"
+        },
+        {
+          "type": "session:list",
+          "params": "none",
+          "description": "List Claude sessions"
+        },
+        {
+          "type": "session:switch",
+          "params": "sessionId",
+          "description": "Switch to session"
+        },
+        {
+          "type": "session:resume",
+          "params": "sessionId",
+          "description": "Resume session"
+        },
+        {
+          "type": "commands:list",
+          "params": "none",
+          "description": "List slash commands"
+        }
       ],
       "server_to_client": [
-        { "type": "auth:success", "data": "user object" },
-        { "type": "auth:error", "data": "error message" },
-        { "type": "message:chunk", "data": "streaming content + id" },
-        { "type": "message:tool_use", "data": "id + toolName + toolInput" },
-        { "type": "message:done", "data": "id" },
-        { "type": "message:error", "data": "error + id" },
-        { "type": "message:thinking", "data": "isThinking boolean" },
-        { "type": "message:thinking_content", "data": "id + thinking text" },
-        { "type": "terminal:output", "data": "tool output" },
-        { "type": "file:content", "data": "path + content" },
-        { "type": "file:tree", "data": "path + FileNode tree" },
-        { "type": "project:list", "data": "Project[]" },
-        { "type": "project:current", "data": "Project" },
-        { "type": "session:list", "data": "Session[]" },
-        { "type": "session:current", "data": "Session | null" },
-        { "type": "session:info", "data": "model + TokenUsage" },
-        { "type": "session:id", "data": "sessionId" },
-        { "type": "session:messages", "data": "Message[]" },
-        { "type": "commands:list", "data": "SlashCommand[]" }
+        {
+          "type": "auth:success",
+          "data": "user object"
+        },
+        {
+          "type": "auth:error",
+          "data": "error message"
+        },
+        {
+          "type": "message:chunk",
+          "data": "streaming content + id"
+        },
+        {
+          "type": "message:tool_use",
+          "data": "id + toolName + toolInput"
+        },
+        {
+          "type": "message:done",
+          "data": "id"
+        },
+        {
+          "type": "message:error",
+          "data": "error + id"
+        },
+        {
+          "type": "message:append",
+          "data": "full Message object (snapshot)"
+        },
+        {
+          "type": "message:thinking",
+          "data": "isThinking boolean"
+        },
+        {
+          "type": "message:thinking_content",
+          "data": "id + thinking text"
+        },
+        {
+          "type": "terminal:output",
+          "data": "tool output"
+        },
+        {
+          "type": "file:content",
+          "data": "path + content"
+        },
+        {
+          "type": "file:tree",
+          "data": "path + FileNode tree"
+        },
+        {
+          "type": "project:list",
+          "data": "Project[]"
+        },
+        {
+          "type": "project:current",
+          "data": "Project"
+        },
+        {
+          "type": "session:list",
+          "data": "Session[]"
+        },
+        {
+          "type": "session:current",
+          "data": "Session | null"
+        },
+        {
+          "type": "session:info",
+          "data": "model + TokenUsage"
+        },
+        {
+          "type": "session:id",
+          "data": "sessionId"
+        },
+        {
+          "type": "session:messages",
+          "data": "Message[]"
+        },
+        {
+          "type": "commands:list",
+          "data": "SlashCommand[]"
+        }
       ]
     }
   },
@@ -119,6 +220,31 @@
       "name": "iOS Mobile Support",
       "status": "implemented",
       "description": "Touch handlers, UUID fallback for older Safari"
+    },
+    {
+      "name": "Message Copy (Mobile Support)",
+      "status": "implemented",
+      "description": "Copy message content to clipboard with HTTP fallback"
+    },
+    {
+      "name": "Unified Command UI",
+      "status": "implemented",
+      "description": "Parse and display encoded command tags as clean UI blocks"
+    },
+    {
+      "name": "WebSocket Room Isolation",
+      "status": "partial",
+      "description": "Server supports Pub/Sub rooms but currently uses direct send() for simplicity"
+    },
+    {
+      "name": "Tool Content Popup",
+      "status": "implemented",
+      "description": "Long tool use/result content is truncated, click to expand in fullscreen modal"
+    },
+    {
+      "name": "AWF Content Filtering",
+      "status": "implemented",
+      "description": "Strip workflow content (YAML frontmatter, markdown body) from displayed messages"
     }
   ],
   "knowledge_items": {
@@ -126,20 +252,34 @@
       {
         "name": "Provider Pattern",
         "description": "Abstraction layer for Claude integration (CLI vs SDK)",
-        "files": ["server/src/claude/types.ts", "server/src/claude/providers/"]
+        "files": [
+          "server/src/claude/types.ts",
+          "server/src/claude/providers/"
+        ]
       },
       {
         "name": "WebSocket Event Bus",
         "description": "Typed bidirectional events via shared/types.ts",
-        "files": ["shared/types.ts", "server/src/websocket.ts", "client/src/hooks/useWebSocket.ts"]
+        "files": [
+          "shared/types.ts",
+          "server/src/websocket.ts",
+          "client/src/hooks/useWebSocket.ts"
+        ]
       },
       {
         "name": "Zustand Store",
         "description": "Simple state management without boilerplate",
-        "files": ["client/src/stores/appStore.ts"]
+        "files": [
+          "client/src/stores/appStore.ts"
+        ]
       }
     ],
     "gotchas": [
+      {
+        "issue": "Copy to clipboard fails on mobile in LAN (HTTP)",
+        "solution": "Use legacy document.execCommand('copy') fallback for non-secure contexts",
+        "file": "client/src/components/MessageList.tsx"
+      },
       {
         "issue": "Stale closure in useCallback causes duplicate messages",
         "solution": "Check for duplicate IDs in Zustand addMessage instead of relying on stale messages array",
@@ -188,7 +328,10 @@
       {
         "issue": "Tool calls and thinking blocks not rendering from SDK stream",
         "solution": "Added onThinkingContent handler and message:thinking_content WebSocket event",
-        "files": ["server/src/claude/providers/sdk.ts", "client/src/App.tsx"]
+        "files": [
+          "server/src/claude/providers/sdk.ts",
+          "client/src/App.tsx"
+        ]
       },
       {
         "issue": "React StrictMode causes WebSocket disconnect on mount",
@@ -203,12 +346,34 @@
       {
         "issue": "tool_use blocks show empty input object",
         "solution": "Parse toolInput from JSON string when creating/appending tool_use blocks",
-        "files": ["client/src/App.tsx", "client/src/stores/appStore.ts"]
+        "files": [
+          "client/src/App.tsx",
+          "client/src/stores/appStore.ts"
+        ]
       },
       {
         "issue": "Session list not loading after project switch",
         "solution": "Server auto-sends session:list event after project:switch is handled",
         "file": "server/src/websocket.ts"
+      },
+      {
+        "issue": "Duplicate messages in UI from separate onChunk/onToolUse events",
+        "solution": "Unified CLI and SDK providers to use 'onMessage' snapshot strategy with 'message:append' event and 'upsertMessage' in store",
+        "files": [
+          "server/src/claude/providers/sdk.ts",
+          "server/src/claude/providers/cli.ts",
+          "client/src/stores/appStore.ts"
+        ]
+      },
+      {
+        "issue": "AWF workflow content (## User Input, ## Goal) displayed in messages",
+        "solution": "Added regex patterns in stripSystemTags to detect @[/workflow] mentions and workflow headings, strip everything after",
+        "file": "client/src/components/MessageList.tsx"
+      },
+      {
+        "issue": "Empty message bubble after stripping workflow content",
+        "solution": "Check hasVisibleContent before rendering, return null if no text/tools/thinking/images",
+        "file": "client/src/components/MessageList.tsx"
       }
     ],
     "conventions": [

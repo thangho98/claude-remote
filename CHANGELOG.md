@@ -2,9 +2,12 @@
 
 All notable changes to claude-remote will be documented in this file.
 
-## [Unreleased]
+## [0.1.1] - 2026-02-02
 
 ### Added
+
+- **Message Copy** - Copy button for chat messages with mobile fallback for HTTP (execCommand)
+- **Command UI** - Unified visual block for Workflow Commands (e.g. /plan, /save-brain)
 - **Slash Commands Autocomplete** - Type `/` to see available commands with keyboard navigation (Arrow keys, Tab/Enter to select, Escape to close)
 - **Provider Pattern Architecture** - Abstraction layer supporting both Claude CLI and Claude Agent SDK backends
 - **Commands Discovery Service** - Auto-discovers builtin, project, and user slash commands
@@ -15,6 +18,7 @@ All notable changes to claude-remote will be documented in this file.
 - **Reconnecting UI** - Show "Reconnecting..." when client has stored token and is reconnecting
 
 ### Changed
+
 - **SDK V2 API** - Updated to use `unstable_v2_createSession` (no API key needed, uses OAuth)
 - **Tailwind CSS v4** - Migrated to CSS-first configuration
 - Migrated WebSocket message handler to use provider pattern
@@ -22,6 +26,7 @@ All notable changes to claude-remote will be documented in this file.
 - **Session list auto-loads** after project switch (server sends session:list automatically)
 
 ### Fixed
+
 - **Duplicate Key Warning** - Fixed React duplicate key error in MessageList by adding ID check in `addMessage`
 - **iOS Safari UUID** - Added fallback for `crypto.randomUUID` not available on older iOS
 - **iOS Touch Events** - Send button now responds to touch via `onTouchEnd`
@@ -34,10 +39,13 @@ All notable changes to claude-remote will be documented in this file.
 - **React StrictMode WebSocket** - Fixed double mount/unmount causing WebSocket disconnect before connection established
 - **Stale Closure in handleMessage** - Use `useAppStore.getState().messages` instead of closure-captured variable
 - **Tool Use Input Parsing** - Parse toolInput from JSON string when creating/appending tool_use blocks
+- **Duplicate WebSocket Messages** - Unified CLI and SDK providers to use `onMessage` snapshot strategy, eliminating duplicate stream events using `upsertMessage`
+- **SDK/CLI Parity** - Both providers now support full state synchronization including Session ID and Tool Results
 
 ## [0.1.0] - 2026-02-01
 
 ### Added
+
 - Initial project structure with Bun monorepo (server, client, shared)
 - WebSocket-based real-time communication
 - Claude CLI integration via subprocess

@@ -1,5 +1,5 @@
-import type { ServerWebSocket } from "bun";
-import type { WSData } from "./websocket";
+import type { ServerWebSocket } from 'bun';
+import type { WSData } from './websocket';
 
 /**
  * WebSocket Room Management
@@ -10,9 +10,9 @@ import type { WSData } from "./websocket";
  * - session:{id} - Connections by session ID
  */
 
-const ROOM_PREFIXES = {
-  PROJECT: "project:",
-  SESSION: "session:",
+export const ROOM_PREFIXES = {
+  PROJECT: 'project:',
+  SESSION: 'session:',
 } as const;
 
 /**
@@ -20,22 +20,22 @@ const ROOM_PREFIXES = {
  */
 export function subscribeToRoom(
   ws: ServerWebSocket<WSData>,
-  roomType: "project" | "session",
-  id: string
+  roomType: 'project' | 'session',
+  id: string,
 ): void {
   const prefix = ROOM_PREFIXES[roomType.toUpperCase() as keyof typeof ROOM_PREFIXES];
   const roomName = `${prefix}${id}`;
 
   // Unsubscribe from previous room of same type
-  if (roomType === "project") {
+  if (roomType === 'project') {
     const currentProject = ws.data.workingDirectory;
     if (currentProject && currentProject !== id) {
-      unsubscribeFromRoom(ws, "project", currentProject);
+      unsubscribeFromRoom(ws, 'project', currentProject);
     }
-  } else if (roomType === "session") {
+  } else if (roomType === 'session') {
     const currentSession = ws.data.currentSessionId;
     if (currentSession && currentSession !== id) {
-      unsubscribeFromRoom(ws, "session", currentSession);
+      unsubscribeFromRoom(ws, 'session', currentSession);
     }
   }
 
@@ -48,8 +48,8 @@ export function subscribeToRoom(
  */
 export function unsubscribeFromRoom(
   ws: ServerWebSocket<WSData>,
-  roomType: "project" | "session",
-  id: string
+  roomType: 'project' | 'session',
+  id: string,
 ): void {
   const prefix = ROOM_PREFIXES[roomType.toUpperCase() as keyof typeof ROOM_PREFIXES];
   const roomName = `${prefix}${id}`;
@@ -65,10 +65,10 @@ export function unsubscribeAll(ws: ServerWebSocket<WSData>): void {
   const { workingDirectory, currentSessionId } = ws.data;
 
   if (workingDirectory) {
-    unsubscribeFromRoom(ws, "project", workingDirectory);
+    unsubscribeFromRoom(ws, 'project', workingDirectory);
   }
   if (currentSessionId) {
-    unsubscribeFromRoom(ws, "session", currentSessionId);
+    unsubscribeFromRoom(ws, 'session', currentSessionId);
   }
 }
 
@@ -78,9 +78,9 @@ export function unsubscribeAll(ws: ServerWebSocket<WSData>): void {
  */
 export function publishToRoom(
   ws: ServerWebSocket<WSData>,
-  roomType: "project" | "session",
+  roomType: 'project' | 'session',
   id: string,
-  message: string
+  message: string,
 ): void {
   const prefix = ROOM_PREFIXES[roomType.toUpperCase() as keyof typeof ROOM_PREFIXES];
   const roomName = `${prefix}${id}`;
@@ -92,18 +92,14 @@ export function publishToRoom(
  * Get room name for a connection's current project
  */
 export function getProjectRoom(ws: ServerWebSocket<WSData>): string | null {
-  return ws.data.workingDirectory
-    ? `${ROOM_PREFIXES.PROJECT}${ws.data.workingDirectory}`
-    : null;
+  return ws.data.workingDirectory ? `${ROOM_PREFIXES.PROJECT}${ws.data.workingDirectory}` : null;
 }
 
 /**
  * Get room name for a connection's current session
  */
 export function getSessionRoom(ws: ServerWebSocket<WSData>): string | null {
-  return ws.data.currentSessionId
-    ? `${ROOM_PREFIXES.SESSION}${ws.data.currentSessionId}`
-    : null;
+  return ws.data.currentSessionId ? `${ROOM_PREFIXES.SESSION}${ws.data.currentSessionId}` : null;
 }
 
 /**
