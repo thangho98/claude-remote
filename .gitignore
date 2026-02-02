@@ -32,3 +32,6 @@ npm-debug.log*
 
 # Brain (session is local state, brain.json can be shared)
 .brain/session.json
+server/debug_cli_messages.json
+server/debug_sdk_messages.json
+server/debug_stream_messages.json

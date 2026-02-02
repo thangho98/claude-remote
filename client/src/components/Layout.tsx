@@ -2,6 +2,8 @@ import { ReactNode, useState } from "react";
 import type { Project } from "@shared/types";
 import { ProjectSelector } from "./ProjectSelector";
 
+type ConnectionState = "idle" | "connecting" | "connected" | "reconnecting" | "disconnected";
+
 interface LayoutProps {
   children: ReactNode;
   sidebar?: ReactNode;
@@ -9,6 +11,9 @@ interface LayoutProps {
   currentProject: Project | null;
   onProjectSelect: (project: Project) => void;
   isConnected: boolean;
+  connectionState?: ConnectionState;
+  reconnectAttempts?: number;
+  onReconnect?: () => void;
   onLogout: () => void;
   activeTab: "chat" | "file" | "files" | "terminal";
   onTabChange: (tab: "chat" | "file" | "files" | "terminal") => void;
@@ -23,12 +28,17 @@ export function Layout({
   currentProject,
   onProjectSelect,
   isConnected,
+  connectionState,
+  reconnectAttempts,
+  onReconnect,
   onLogout,
   activeTab,
   onTabChange,
   currentModel,
   hasOpenFile,
 }: LayoutProps) {
+  const isReconnecting = connectionState === "reconnecting";
+  const isDisconnected = connectionState === "disconnected";
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -70,22 +80,47 @@ export function Layout({
         <div className="flex items-center gap-3">
           {/* Model display */}
           {currentModel && (
-            <span className="text-xs px-2 py-1 bg-orange-900/50 text-orange-300 rounded hidden sm:inline">
+            <span className="text-xs px-2 py-1 bg-orange-900/50 text-orange-300 rounded-sm hidden sm:inline">
               {currentModel}
             </span>
           )}
 
           {/* Connection status */}
           <div className="flex items-center gap-2">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                isConnected ? "bg-green-500" : "bg-red-500"
-              }`}
-            />
-            <span className="text-sm text-gray-400 hidden sm:inline">
-              {isConnected ? "Connected" : "Disconnected"}
-            </span>
+            {isReconnecting ? (
+              <>
+                <svg className="w-4 h-4 animate-spin text-yellow-500" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span className="text-sm text-yellow-500 hidden sm:inline">
+                  Reconnecting{reconnectAttempts ? ` (${reconnectAttempts})` : ""}...
+                </span>
+              </>
+            ) : (
+              <>
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isConnected ? "bg-green-500" : "bg-red-500"
+                  }`}
+                />
+                <span className="text-sm text-gray-400 hidden sm:inline">
+                  {isConnected ? "Connected" : "Disconnected"}
+                </span>
+              </>
+            )}
           </div>
+
+          {/* Reconnect button when disconnected */}
+          {isDisconnected && onReconnect && (
+            <button
+              onClick={onReconnect}
+              className="px-3 py-1 text-sm bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors"
+              title="Try reconnect"
+            >
+              Reconnect
+            </button>
+          )}
 
           {/* Logout */}
           <button
@@ -129,7 +164,7 @@ export function Layout({
                 <h2 className="font-semibold">Files</h2>
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="p-1 hover:bg-gray-700 rounded"
+                  className="p-1 hover:bg-gray-700 rounded-sm"
                 >
                   <svg
                     className="w-5 h-5"

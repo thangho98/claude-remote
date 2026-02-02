@@ -1,11 +1,26 @@
-import type { ServerWebSocket } from "bun";
-import type { WSClientEvent, WSServerEvent } from "../../shared/types";
-import { getFileTree, readFileContent, isPathSafe } from "./services/file";
-import { listProjects } from "./services/project";
-import { listSessions, getSessionInfo, getSessionMessages } from "./services/session";
-import { listCommands } from "./services/commands";
-import { getClaudeProvider } from "./claude/providers";
-import { getOrCreateSession } from "./claude/session";
+import type { ServerWebSocket } from 'bun';
+import type { WSClientEvent, WSServerEvent } from '../../shared/types';
+import { getFileTree, readFileContent, isPathSafe } from './services/file';
+import { listProjects } from './services/project';
+import { listSessions, getSessionInfo, getSessionMessages } from './services/session';
+import { listCommands } from './services/commands';
+import { getClaudeProvider } from './claude/providers';
+import { getOrCreateSession } from './claude/session';
+import { subscribeToRoom, unsubscribeAll, getSubscribedRooms } from './rooms';
+
+// Track all active WebSocket connections
+const activeConnections = new Set<ServerWebSocket<WSData>>();
+
+export function getConnections(): ServerWebSocket<WSData>[] {
+  return Array.from(activeConnections);
+}
+
+export function getConnectionStats(): { project: string | null; session: string | null }[] {
+  return Array.from(activeConnections).map((ws) => ({
+    project: ws.data.workingDirectory,
+    session: ws.data.currentSessionId,
+  }));
+}
 
 export interface WSData {
   authenticated: boolean;
@@ -16,84 +31,102 @@ export interface WSData {
 export function createWebSocketHandlers() {
   return {
     open(ws: ServerWebSocket<WSData>) {
-      console.log("🔌 WebSocket client connected");
+      activeConnections.add(ws);
+      console.log('🔌 WebSocket client connected');
     },
 
     async message(ws: ServerWebSocket<WSData>, message: string | Buffer) {
       try {
         const msgStr = message.toString();
-        console.log("📩 Received WS message:", msgStr.slice(0, 100));
+        console.log('📩 Received WS message:', msgStr.slice(0, 100));
         const event: WSClientEvent = JSON.parse(msgStr);
         await handleEvent(ws, event);
       } catch (error) {
-        console.error("Invalid message:", error);
-        send(ws, { type: "message:error", error: "Invalid message format", id: "" });
+        console.error('Invalid message:', error);
+        send(ws, { type: 'message:error', error: 'Invalid message format', id: '' });
       }
     },
 
     close(ws: ServerWebSocket<WSData>) {
-      console.log("🔌 WebSocket client disconnected");
+      const rooms = getSubscribedRooms(ws);
+      console.log('🔌 WebSocket client disconnected', rooms);
+      unsubscribeAll(ws);
+      activeConnections.delete(ws);
     },
   };
 }
 
 async function handleEvent(ws: ServerWebSocket<WSData>, event: WSClientEvent) {
   switch (event.type) {
-    case "auth":
-      send(ws, { type: "auth:success", user: { authenticated: true } });
+    case 'auth':
+      send(ws, { type: 'auth:success', user: { authenticated: true } });
       // Send project list on auth
       const projects = await listProjects();
-      send(ws, { type: "project:list", projects });
+      send(ws, { type: 'project:list', projects });
       break;
 
-    case "message":
+    case 'message':
       await handleMessage(ws, event.content);
       break;
 
-    case "project:switch":
+    case 'project:switch':
       ws.data.workingDirectory = event.path;
       console.log(`📁 Switched to project: ${event.path}`);
+
+      // Subscribe to project room
+      subscribeToRoom(ws, 'project', event.path);
+
       // Send file tree for new project
       try {
         const tree = await getFileTree(event.path);
-        send(ws, { type: "file:tree", path: event.path, tree });
+        send(ws, { type: 'file:tree', path: event.path, tree });
         send(ws, {
-          type: "project:current",
-          project: { id: "", name: event.path.split("/").pop() || "", path: event.path },
+          type: 'project:current',
+          project: { id: '', name: event.path.split('/').pop() || '', path: event.path },
         });
+
+        // Auto-send session list after project switch
+        const sessions = await listSessions(event.path);
+        send(ws, { type: 'session:list', sessions });
+        console.log(`📋 Sent ${sessions.length} sessions for ${event.path}`);
       } catch (error) {
-        send(ws, { type: "message:error", error: "Failed to load project", id: "" });
+        console.error(`❌ Error in project:switch:`, error);
+        send(ws, { type: 'message:error', error: 'Failed to load project', id: '' });
       }
       break;
 
-    case "file:read":
+    case 'file:read':
       await handleFileRead(ws, event.path);
       break;
 
-    case "file:list":
+    case 'file:list':
       await handleFileList(ws, event.path);
       break;
 
-    case "session:list":
+    case 'session:list':
       await handleSessionList(ws);
       break;
 
-    case "session:switch":
+    case 'session:switch':
       await handleSessionSwitch(ws, event.sessionId);
       break;
 
-    case "commands:list":
+    case 'session:new':
+      handleSessionNew(ws);
+      break;
+
+    case 'commands:list':
       await handleCommandsList(ws);
       break;
 
     default:
-      console.warn("Unknown event type:", event);
+      console.warn('Unknown event type:', event);
   }
 }
 
 async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
   if (!ws.data.workingDirectory) {
-    send(ws, { type: "message:error", error: "No project selected", id: "" });
+    send(ws, { type: 'message:error', error: 'No project selected', id: '' });
     return;
   }
 
@@ -101,7 +134,9 @@ async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
   const session = getOrCreateSession(ws.data.workingDirectory);
   const sessionId = ws.data.currentSessionId;
 
-  console.log(`💬 Message received in ${session.workingDirectory}: "${content.slice(0, 50)}..."${sessionId ? ` (resuming session ${sessionId})` : ""}`);
+  console.log(
+    `💬 Message received in ${session.workingDirectory}: "${content.slice(0, 50)}..."${sessionId ? ` (resuming session ${sessionId})` : ''}`,
+  );
 
   try {
     const provider = await getClaudeProvider();
@@ -111,27 +146,66 @@ async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
       sessionId,
       handlers: {
         onChunk: (chunk) => {
-          send(ws, { type: "message:chunk", content: chunk, id });
+          send(ws, { type: 'message:chunk', content: chunk, id });
         },
-        onDone: () => {
-          send(ws, { type: "message:done", id });
+        onDone: async () => {
+          send(ws, { type: 'message:done', id });
           console.log(`✅ Message ${id} completed`);
+
+          // Refresh session list and info after message completes
+          try {
+            const sessions = await listSessions(ws.data.workingDirectory!);
+            send(ws, { type: 'session:list', sessions });
+            console.log(`🔄 Refreshed session list (${sessions.length} sessions)`);
+
+            // Update session info (model + token usage)
+            if (ws.data.currentSessionId) {
+              const info = await getSessionInfo(ws.data.workingDirectory!, ws.data.currentSessionId);
+              if (info) {
+                send(ws, { type: 'session:info', model: info.model, usage: info.usage });
+              }
+            }
+          } catch (error) {
+            console.error('Failed to refresh sessions:', error);
+          }
         },
         onError: (error) => {
-          send(ws, { type: "message:error", error, id });
+          send(ws, { type: 'message:error', error, id });
           console.error(`❌ Message ${id} error:`, error);
         },
         onToolUse: (tool, input) => {
-          send(ws, { type: "terminal:output", content: `[${tool}] ${input}` });
+          send(ws, { type: 'terminal:output', content: `[${tool}] ${input}` });
+          send(ws, { type: 'message:tool_use', id, toolName: tool, toolInput: input });
+        },
+        onToolResult: (tool, result) => {
+          console.log(`📡 Sending tool result for ${tool} (${result.length} chars)`);
+          send(ws, { type: 'terminal:output', content: result });
         },
         onThinking: (isThinking) => {
-          send(ws, { type: "message:thinking", isThinking });
+          send(ws, { type: 'message:thinking', isThinking });
+        },
+        onThinkingContent: (content) => {
+          send(ws, { type: 'message:thinking_content', id, content });
+        },
+        onSessionId: async (newSessionId) => {
+          ws.data.currentSessionId = newSessionId;
+          send(ws, { type: 'session:id', sessionId: newSessionId });
+          console.log(`📋 Updated current session: ${newSessionId}`);
+
+          // Send session info (model + token usage) for new session
+          const info = await getSessionInfo(ws.data.workingDirectory!, newSessionId);
+          if (info) {
+            send(ws, { type: 'session:info', model: info.model, usage: info.usage });
+          }
+        },
+        onMessage: (message) => {
+          send(ws, { type: 'message:append', message });
         },
       },
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    send(ws, { type: "message:error", error: errorMessage, id });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    send(ws, { type: 'message:error', error: errorMessage, id });
     console.error(`❌ Failed to process message:`, error);
   }
 }
@@ -142,42 +216,48 @@ async function handleFileRead(ws: ServerWebSocket<WSData>, path: string) {
     // Security check
     if (ws.data.workingDirectory && !isPathSafe(ws.data.workingDirectory, path)) {
       console.warn(`⚠️ Access denied: ${path} not within ${ws.data.workingDirectory}`);
-      send(ws, { type: "message:error", error: "Access denied", id: "" });
+      send(ws, { type: 'message:error', error: 'Access denied', id: '' });
       return;
     }
 
     const content = await readFileContent(path);
     console.log(`✅ File read successfully: ${path} (${content.length} chars)`);
-    send(ws, { type: "file:content", path, content });
+    send(ws, { type: 'file:content', path, content });
   } catch (error) {
     console.error(`❌ Failed to read file: ${path}`, error);
-    send(ws, { type: "message:error", error: `Failed to read file: ${path}`, id: "" });
+    send(ws, { type: 'message:error', error: `Failed to read file: ${path}`, id: '' });
   }
 }
 
 async function handleFileList(ws: ServerWebSocket<WSData>, path: string) {
   try {
     const tree = await getFileTree(path);
-    send(ws, { type: "file:tree", path, tree });
+    send(ws, { type: 'file:tree', path, tree });
   } catch (error) {
-    send(ws, { type: "message:error", error: `Failed to list files: ${path}`, id: "" });
+    send(ws, { type: 'message:error', error: `Failed to list files: ${path}`, id: '' });
   }
 }
 
 async function handleSessionList(ws: ServerWebSocket<WSData>) {
   if (!ws.data.workingDirectory) {
-    send(ws, { type: "session:list", sessions: [] });
+    send(ws, { type: 'session:list', sessions: [] });
     return;
   }
 
   try {
     const sessions = await listSessions(ws.data.workingDirectory);
-    send(ws, { type: "session:list", sessions });
+    send(ws, { type: 'session:list', sessions });
     console.log(`📋 Sent ${sessions.length} sessions for ${ws.data.workingDirectory}`);
   } catch (error) {
-    console.error("Failed to list sessions:", error);
-    send(ws, { type: "session:list", sessions: [] });
+    console.error('Failed to list sessions:', error);
+    send(ws, { type: 'session:list', sessions: [] });
   }
+}
+
+function handleSessionNew(ws: ServerWebSocket<WSData>) {
+  ws.data.currentSessionId = null;
+  console.log('🆕 Cleared session ID for new session');
+  send(ws, { type: 'session:current', session: null });
 }
 
 async function handleSessionSwitch(ws: ServerWebSocket<WSData>, sessionId: string) {
@@ -188,43 +268,48 @@ async function handleSessionSwitch(ws: ServerWebSocket<WSData>, sessionId: strin
   ws.data.currentSessionId = sessionId;
   console.log(`🔄 Switched to session: ${sessionId}`);
 
+  // Subscribe to session room
+  subscribeToRoom(ws, 'session', sessionId);
+
   // Get session info and send it
   const info = await getSessionInfo(ws.data.workingDirectory, sessionId);
   if (info) {
-    send(ws, { type: "session:info", model: info.model, usage: info.usage });
+    send(ws, { type: 'session:info', model: info.model, usage: info.usage });
   }
 
-  // Find session in list and send as current
+  // Refresh and send session list
   const sessions = await listSessions(ws.data.workingDirectory);
+  send(ws, { type: 'session:list', sessions });
+
+  // Find and send current session
   const currentSession = sessions.find((s) => s.id === sessionId);
   if (currentSession) {
-    send(ws, { type: "session:current", session: currentSession });
+    send(ws, { type: 'session:current', session: currentSession });
   }
 
   // Load and send session messages
   const rawMessages = await getSessionMessages(ws.data.workingDirectory, sessionId);
   const messages = rawMessages.map((m, i) => ({
     id: `${sessionId}-${i}`,
-    role: m.role as "user" | "assistant",
+    role: m.role as 'user' | 'assistant',
     content: m.content,
     timestamp: m.timestamp,
   }));
-  send(ws, { type: "session:messages", messages });
+  send(ws, { type: 'session:messages', messages });
   console.log(`📨 Sent ${messages.length} messages for session ${sessionId}`);
 }
 
 async function handleCommandsList(ws: ServerWebSocket<WSData>) {
   try {
     const commands = await listCommands(ws.data.workingDirectory || undefined);
-    send(ws, { type: "commands:list", commands });
+    send(ws, { type: 'commands:list', commands });
     console.log(`📋 Sent ${commands.length} commands`);
   } catch (error) {
-    console.error("Failed to list commands:", error);
-    send(ws, { type: "commands:list", commands: [] });
+    console.error('Failed to list commands:', error);
+    send(ws, { type: 'commands:list', commands: [] });
   }
 }
 
 function send(ws: ServerWebSocket<WSData>, event: WSServerEvent) {
   ws.send(JSON.stringify(event));
 }
-

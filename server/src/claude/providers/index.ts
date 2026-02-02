@@ -61,7 +61,7 @@ export async function getClaudeProvider(): Promise<ClaudeProvider> {
     }
   }
 
-  throw new Error("No Claude provider available. Install Claude CLI or set ANTHROPIC_API_KEY.");
+  throw new Error("No Claude provider available. Install Claude CLI or Claude Agent SDK.");
 }
 
 /**

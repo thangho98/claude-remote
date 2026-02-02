@@ -101,7 +101,8 @@ claude-remote/
 | `AUTH_TOKEN` | Authentication token | required |
 | `DEFAULT_PROJECT_DIR` | Projects directory | ~/projects |
 | `CLAUDE_PROVIDER` | `cli` or `sdk` | cli |
-| `ANTHROPIC_API_KEY` | Required if using SDK | - |
+
+> Both providers use Claude CLI's OAuth authentication - no API key needed!
 
 ## Development
 

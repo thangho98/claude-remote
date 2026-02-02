@@ -1,6 +1,6 @@
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import type { Message, Project, FileNode, Session, TokenUsage, SlashCommand } from "@shared/types";
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import type { Message, Project, FileNode, Session, TokenUsage, SlashCommand } from '@shared/types';
 
 interface AppState {
   // Auth
@@ -33,7 +33,7 @@ interface AppState {
   tokenUsage: TokenUsage | null;
 
   // UI
-  activeTab: "chat" | "file" | "files" | "terminal";
+  activeTab: 'chat' | 'file' | 'files' | 'terminal';
   sidebarOpen: boolean;
 
   // Commands
@@ -57,6 +57,9 @@ interface AppActions {
   setMessages: (messages: Message[]) => void;
   addMessage: (message: Message) => void;
   updateMessage: (id: string, content: string) => void;
+  upsertMessage: (message: Message) => void;
+  addToolUseToMessage: (id: string, toolName: string, toolInput: string) => void;
+  addThinkingToMessage: (id: string, content: string) => void;
   setMessageDone: (id: string) => void;
   clearMessages: () => void;
 
@@ -79,7 +82,7 @@ interface AppActions {
   setTokenUsage: (usage: TokenUsage | null) => void;
 
   // UI
-  setActiveTab: (tab: "chat" | "file" | "files" | "terminal") => void;
+  setActiveTab: (tab: 'chat' | 'file' | 'files' | 'terminal') => void;
   toggleSidebar: () => void;
 
   // Commands
@@ -105,7 +108,7 @@ export const useAppStore = create<AppState & AppActions>()(
       currentSession: null,
       currentModel: null,
       tokenUsage: null,
-      activeTab: "chat",
+      activeTab: 'chat',
       sidebarOpen: true,
       commands: [],
 
@@ -149,16 +152,97 @@ export const useAppStore = create<AppState & AppActions>()(
 
       updateMessage: (id, content) =>
         set((state) => ({
-          messages: state.messages.map((m) =>
-            m.id === id ? { ...m, content: m.content + content } : m
-          ),
+          messages: state.messages.map((m) => {
+            if (m.id !== id) return m;
+            // Handle both string and array content
+            if (typeof m.content === 'string') {
+              return { ...m, content: m.content + content };
+            }
+            // Content is array - find existing text block or add new one
+            const blocks = [...m.content];
+            const lastBlock = blocks[blocks.length - 1];
+            if (lastBlock && lastBlock.type === 'text') {
+              // Append to existing text block
+              blocks[blocks.length - 1] = { ...lastBlock, text: lastBlock.text + content };
+            } else {
+              // Add new text block
+              blocks.push({ type: 'text' as const, text: content });
+            }
+            return { ...m, content: blocks };
+          }),
+        })),
+
+      upsertMessage: (message) =>
+        set((state) => {
+          const index = state.messages.findIndex((m) => m.id === message.id);
+          if (index !== -1) {
+            // Replace existing message
+            const newMessages = [...state.messages];
+            newMessages[index] = message;
+            return { messages: newMessages };
+          }
+          // Add new message
+          return { messages: [...state.messages, message] };
+        }),
+
+      addToolUseToMessage: (id, toolName, toolInput) =>
+        set((state) => ({
+          messages: state.messages.map((m) => {
+            if (m.id !== id) return m;
+            // Convert string content to array if needed
+            const currentContent =
+              typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : m.content;
+            // Parse toolInput if it's a string
+            let parsedInput: Record<string, unknown> = {};
+            if (typeof toolInput === 'string') {
+              try {
+                parsedInput = JSON.parse(toolInput);
+              } catch {
+                parsedInput = { raw: toolInput };
+              }
+            } else if (toolInput && typeof toolInput === 'object') {
+              parsedInput = toolInput as Record<string, unknown>;
+            }
+            // Add tool_use block
+            return {
+              ...m,
+              content: [
+                ...currentContent,
+                { type: 'tool_use' as const, id: `${id}-${toolName}`, name: toolName, input: parsedInput },
+              ],
+            };
+          }),
+        })),
+
+      addThinkingToMessage: (id, content) =>
+        set((state) => ({
+          messages: state.messages.map((m) => {
+            if (m.id !== id) return m;
+            // Convert string content to array if needed
+            const currentContent =
+              typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : [...m.content];
+            // Find existing thinking block or add new one
+            const lastBlock = currentContent[currentContent.length - 1];
+            if (lastBlock && lastBlock.type === 'thinking') {
+              // Append to existing thinking block
+              currentContent[currentContent.length - 1] = {
+                ...lastBlock,
+                thinking: (lastBlock as { type: 'thinking'; thinking: string }).thinking + content,
+              };
+              return { ...m, content: currentContent };
+            } else {
+              // Add new thinking block
+              return {
+                ...m,
+                content: [...currentContent, { type: 'thinking' as const, thinking: content }],
+              };
+            }
+          }),
         })),
 
       setMessageDone: (id) =>
         set((state) => ({
-          messages: state.messages.map((m) =>
-            m.id === id ? { ...m, isStreaming: false } : m
-          ),
+          messages: state.messages.map((m) => (m.id === id ? { ...m, isStreaming: false } : m)),
         })),
 
       clearMessages: () => set({ messages: [] }),
@@ -193,11 +277,11 @@ export const useAppStore = create<AppState & AppActions>()(
       setCommands: (commands) => set({ commands }),
     }),
     {
-      name: "claude-remote-storage",
+      name: 'claude-remote-storage',
       partialize: (state) => ({
         token: state.token,
         currentProject: state.currentProject,
       }),
-    }
-  )
+    },
+  ),
 );

@@ -1,19 +1,21 @@
-import { spawn } from "bun";
-import type { ClaudeProvider, ClaudeQueryOptions, ClaudeMessageHandler } from "../types";
+import { spawn } from 'bun';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { ClaudeProvider, ClaudeQueryOptions, ClaudeMessageHandler } from '../types';
 
 /**
  * Claude CLI Provider
  * Uses the installed Claude CLI with print mode and stream-json output
  */
 export class ClaudeCliProvider implements ClaudeProvider {
-  readonly name = "cli";
+  readonly name = 'cli';
 
   async isAvailable(): Promise<boolean> {
     try {
       const proc = spawn({
-        cmd: ["claude", "--version"],
-        stdout: "pipe",
-        stderr: "pipe",
+        cmd: ['claude', '--version'],
+        stdout: 'pipe',
+        stderr: 'pipe',
       });
       const exitCode = await proc.exited;
       return exitCode === 0;
@@ -28,28 +30,29 @@ export class ClaudeCliProvider implements ClaudeProvider {
     return new Promise((resolve) => {
       let hasError = false;
       let hasStreamedContent = false;
+      const debugMessages: unknown[] = [];
 
       const cmdArgs = [
-        "claude",
-        "-p",
+        'claude',
+        '-p',
         prompt,
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--dangerously-skip-permissions",
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--dangerously-skip-permissions',
       ];
 
       handlers.onThinking?.(true);
 
       if (sessionId) {
-        cmdArgs.push("--resume", sessionId);
+        cmdArgs.push('--resume', sessionId);
       }
 
       const proc = spawn({
         cmd: cmdArgs,
         cwd: workingDirectory,
-        stdout: "pipe",
-        stderr: "pipe",
+        stdout: 'pipe',
+        stderr: 'pipe',
         env: {
           ...process.env,
           HOME: process.env.HOME,
@@ -58,7 +61,7 @@ export class ClaudeCliProvider implements ClaudeProvider {
 
       const reader = proc.stdout.getReader();
       const decoder = new TextDecoder();
-      let buffer = "";
+      let buffer = '';
 
       const processStream = async () => {
         try {
@@ -67,18 +70,19 @@ export class ClaudeCliProvider implements ClaudeProvider {
             if (done) break;
 
             buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() || "";
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
               if (!line.trim()) continue;
 
               try {
                 const event = JSON.parse(line);
+                debugMessages.push(event);
                 const hadContent = this.handleStreamEvent(event, handlers, hasStreamedContent);
                 if (hadContent) hasStreamedContent = true;
               } catch {
-                handlers.onChunk(line + "\n");
+                handlers.onChunk(line + '\n');
                 hasStreamedContent = true;
               }
             }
@@ -87,13 +91,14 @@ export class ClaudeCliProvider implements ClaudeProvider {
           if (buffer.trim()) {
             try {
               const event = JSON.parse(buffer);
+              debugMessages.push(event);
               this.handleStreamEvent(event, handlers, hasStreamedContent);
             } catch {
               handlers.onChunk(buffer);
             }
           }
         } catch (error) {
-          console.error("Stream processing error:", error);
+          console.error('Stream processing error:', error);
         }
       };
 
@@ -105,20 +110,29 @@ export class ClaudeCliProvider implements ClaudeProvider {
             if (done) break;
 
             const text = decoder.decode(value);
-            console.error("Claude stderr:", text);
+            console.error('Claude stderr:', text);
 
-            if (text.includes("error") || text.includes("Error") || text.includes("failed")) {
+            if (text.includes('error') || text.includes('Error') || text.includes('failed')) {
               hasError = true;
               handlers.onError(text);
             }
           }
         } catch (error) {
-          console.error("Stderr processing error:", error);
+          console.error('Stderr processing error:', error);
         }
       };
 
       Promise.all([processStream(), processStderr()]).then(async () => {
         const exitCode = await proc.exited;
+
+        try {
+          const debugFilePath = join(process.cwd(), 'debug_cli_messages.json');
+          writeFileSync(debugFilePath, JSON.stringify(debugMessages, null, 2));
+          console.log(`Debug CLI messages saved to ${debugFilePath}`);
+        } catch (e) {
+          console.error('Failed to save debug CLI messages:', e);
+        }
+
         handlers.onThinking?.(false);
 
         if (exitCode !== 0 && !hasError) {
@@ -134,53 +148,55 @@ export class ClaudeCliProvider implements ClaudeProvider {
   private handleStreamEvent(
     event: unknown,
     handlers: ClaudeMessageHandler,
-    hasStreamedContent: boolean
+    hasStreamedContent: boolean,
   ): boolean {
-    if (!event || typeof event !== "object") return false;
+    if (!event || typeof event !== 'object') return false;
 
     const e = event as Record<string, unknown>;
     let sentContent = false;
 
-    if (e.type === "assistant" && e.message) {
+    if (e.type === 'system' && e.subtype === 'init' && e.session_id) {
+      handlers.onSessionId?.(e.session_id as string);
+      return true;
+    }
+
+    if (e.type === 'assistant' && e.message) {
       const msg = e.message as Record<string, unknown>;
-      if (msg.content && Array.isArray(msg.content)) {
-        for (const block of msg.content) {
-          if (block && typeof block === "object") {
-            const b = block as Record<string, unknown>;
-            if (b.type === "thinking") {
-              handlers.onThinking?.(true);
-            } else if (b.type === "text" && typeof b.text === "string") {
-              handlers.onThinking?.(false);
-              handlers.onChunk(b.text);
-              sentContent = true;
-            } else if (b.type === "tool_use") {
-              handlers.onThinking?.(false);
-              const toolName = b.name as string;
-              const toolInput = JSON.stringify(b.input, null, 2);
-              handlers.onToolUse?.(toolName, toolInput);
-            }
-          }
-        }
+
+      // Send full message update
+      if (msg.id) {
+        handlers.onMessage?.({
+          id: msg.id,
+          role: 'assistant',
+          content: msg.content,
+          timestamp: new Date().toISOString(),
+        });
       }
-    } else if (e.type === "content_block_start") {
-      const contentBlock = e.content_block as Record<string, unknown> | undefined;
-      if (contentBlock?.type === "thinking") {
-        handlers.onThinking?.(true);
-      }
-    } else if (e.type === "content_block_delta") {
+      return true;
+    }
+
+    if (e.type === 'user' && e.message) {
+      const msg = e.message as Record<string, unknown>;
+      // Send full message update (Tool Result)
+      handlers.onMessage?.({
+        id: `msg_${Date.now()}`,
+        role: 'user',
+        content: msg.content,
+        timestamp: new Date().toISOString(),
+      });
+      return true;
+    }
+
+    // Still handle thinking deltas for real-time feedback if needed,
+    // but text/tool content is now synced via onMessage
+    if (e.type === 'content_block_delta') {
       const delta = e.delta as Record<string, unknown> | undefined;
-      if (delta?.type === "thinking_delta") {
+      if (delta?.type === 'thinking_delta') {
         handlers.onThinking?.(true);
-      } else if (delta?.type === "text_delta" && typeof delta.text === "string") {
-        handlers.onThinking?.(false);
-        handlers.onChunk(delta.text);
-        sentContent = true;
-      }
-    } else if (e.type === "result" && typeof e.result === "string") {
-      handlers.onThinking?.(false);
-      if (!hasStreamedContent && e.result && !e.result.startsWith("{")) {
-        handlers.onChunk(e.result);
-        sentContent = true;
+        // We could stream thinking content here if we want real-time thinking updates
+        if (delta.thinking) {
+          handlers.onThinkingContent?.(delta.thinking as string);
+        }
       }
     }
 
