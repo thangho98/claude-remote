@@ -15,8 +15,9 @@ interface LayoutProps {
   reconnectAttempts?: number;
   onReconnect?: () => void;
   onLogout: () => void;
-  activeTab: "chat" | "file" | "files" | "terminal";
-  onTabChange: (tab: "chat" | "file" | "files" | "terminal") => void;
+  activeTab: "chat" | "file" | "files" | "terminal" | "git";
+  onTabChange: (tab: "chat" | "file" | "files" | "terminal" | "git") => void;
+  gitChangeCount?: number;
   hasOpenFile?: boolean;
 }
 
@@ -34,6 +35,7 @@ export function Layout({
   activeTab,
   onTabChange,
   hasOpenFile,
+  gitChangeCount,
 }: LayoutProps) {
   const isReconnecting = connectionState === "reconnecting";
   const isDisconnected = connectionState === "disconnected";
@@ -186,7 +188,7 @@ export function Layout({
       {/* Mobile bottom tabs */}
       <nav className="lg:hidden border-t border-gray-700 bg-gray-800 pb-safe">
         <div className="flex">
-          {(["chat", "file", "files", "terminal"] as const).map((tab) => (
+          {(["chat", "file", "files", "terminal", "git"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => onTabChange(tab)}
@@ -261,7 +263,31 @@ export function Layout({
                   />
                 </svg>
               )}
-              <span className="text-xs capitalize">{tab === "file" ? "File" : tab}</span>
+              {tab === "git" && (
+                <div className="relative">
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+                    />
+                  </svg>
+                  {gitChangeCount != null && gitChangeCount > 0 && (
+                    <span className="absolute -top-1 -right-2 px-1 text-[9px] rounded-full bg-orange-600 text-white leading-tight">
+                      {gitChangeCount}
+                    </span>
+                  )}
+                </div>
+              )}
+              <span className="text-xs capitalize">
+                {tab === "file" ? "File" : tab === "git" ? "Git" : tab}
+              </span>
             </button>
           ))}
         </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { v7 as uuidv7 } from 'uuid';
 import { useWebSocket } from './hooks/useWebSocket';
 import {
@@ -12,6 +12,8 @@ import {
   useTerminalStore,
   useSessionStore,
   useUIStore,
+  useGitStore,
+  useBottomPanelStore,
 } from './stores/appStore';
 import { AuthScreen } from './components/AuthScreen';
 import { Layout } from './components/Layout';
@@ -21,6 +23,13 @@ import { FileViewer } from './components/FileViewer';
 import { TerminalOutput } from './components/TerminalOutput';
 import { SessionPanel } from './components/SessionPanel';
 import type { WSServerEvent, Message, Session } from '@shared/types';
+
+const SourceControlPanel = lazy(() =>
+  import('./components/SourceControlPanel').then((m) => ({ default: m.SourceControlPanel })),
+);
+const DiffViewer = lazy(() =>
+  import('./components/DiffViewer').then((m) => ({ default: m.DiffViewer })),
+);
 
 function App() {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -35,6 +44,8 @@ function App() {
   const { terminalOutput, clearTerminal } = useTerminalStore();
   const { sessions, currentSession, setCurrentSession, setCurrentModel, tokenUsage, setTokenUsage } = useSessionStore();
   const { activeTab, setActiveTab, commands } = useUIStore();
+  const { gitStatus, gitChanges, selectedDiff, setSelectedDiff } = useGitStore();
+  const { bottomPanelTab, setBottomPanelTab } = useBottomPanelStore();
 
   // Handle incoming WebSocket messages
   const handleMessage = useCallback(
@@ -189,6 +200,22 @@ function App() {
         case 'commands:list':
           store.setCommands(event.commands);
           break;
+
+        case 'git:status':
+          store.setGitStatus(event.status);
+          break;
+
+        case 'git:changes':
+          store.setGitChanges(event.changes);
+          break;
+
+        case 'git:diff':
+          store.setSelectedDiff(event.diff);
+          break;
+
+        case 'git:error':
+          console.error('Git error:', event.error);
+          break;
       }
     },
     [],
@@ -301,6 +328,16 @@ function App() {
     }
   }, [isConnected, addMessage, setLoading, send]);
 
+  // Handle git refresh
+  const handleGitRefresh = useCallback(() => {
+    send({ type: 'git:status' });
+  }, [send]);
+
+  // Handle git diff selection
+  const handleGitDiffSelect = useCallback((path: string) => {
+    send({ type: 'git:diff', path });
+  }, [send]);
+
   // Auto-connect if we have a stored token
   useEffect(() => {
     if (token && !isConnected && !isConnecting && !authenticated) {
@@ -358,6 +395,7 @@ function App() {
       activeTab={activeTab}
       onTabChange={setActiveTab}
       hasOpenFile={!!selectedFile}
+      gitChangeCount={gitChanges.length}
       sidebar={
         <FileExplorer tree={fileTree} onFileSelect={handleFileSelect} selectedPath={selectedFile?.path} />
       }
@@ -371,7 +409,14 @@ function App() {
         <div className="flex-1 flex flex-col border-r border-gray-700">
           {/* File content area */}
           <div className="flex-1 overflow-hidden">
-            {selectedFile ? (
+            {selectedDiff ? (
+              <Suspense fallback={<div className="h-full flex items-center justify-center text-gray-500">Loading diff...</div>}>
+                <DiffViewer
+                  diff={selectedDiff}
+                  onClose={() => setSelectedDiff(null)}
+                />
+              </Suspense>
+            ) : selectedFile ? (
               <FileViewer
                 path={selectedFile.path}
                 content={selectedFile.content}
@@ -398,9 +443,52 @@ function App() {
               </div>
             )}
           </div>
-          {/* Terminal at bottom */}
-          <div className="h-48 border-t border-gray-700">
-            <TerminalOutput output={terminalOutput} onClear={clearTerminal} />
+          {/* Bottom panel with tabs */}
+          <div className="h-48 border-t border-gray-700 flex flex-col">
+            {/* Tab bar */}
+            <div className="flex items-center bg-gray-800 border-b border-gray-700 px-2 shrink-0">
+              <button
+                onClick={() => setBottomPanelTab('terminal')}
+                className={`px-3 py-1.5 text-xs font-medium border-b-2 transition-colors ${
+                  bottomPanelTab === 'terminal'
+                    ? 'text-orange-400 border-orange-400'
+                    : 'text-gray-500 border-transparent hover:text-gray-300'
+                }`}
+              >
+                Terminal
+              </button>
+              <button
+                onClick={() => setBottomPanelTab('git')}
+                className={`px-3 py-1.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                  bottomPanelTab === 'git'
+                    ? 'text-orange-400 border-orange-400'
+                    : 'text-gray-500 border-transparent hover:text-gray-300'
+                }`}
+              >
+                Source Control
+                {gitChanges.length > 0 && (
+                  <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-orange-600 text-white leading-none">
+                    {gitChanges.length}
+                  </span>
+                )}
+              </button>
+            </div>
+            {/* Panel content */}
+            <div className="flex-1 overflow-hidden">
+              {bottomPanelTab === 'terminal' ? (
+                <TerminalOutput output={terminalOutput} onClear={clearTerminal} hideHeader />
+              ) : (
+                <Suspense fallback={<div className="h-full flex items-center justify-center text-gray-500 text-sm">Loading...</div>}>
+                  <SourceControlPanel
+                    gitStatus={gitStatus}
+                    gitChanges={gitChanges}
+                    onDiffSelect={handleGitDiffSelect}
+                    onRefresh={handleGitRefresh}
+                    selectedDiffPath={selectedDiff?.path}
+                  />
+                </Suspense>
+              )}
+            </div>
           </div>
         </div>
 
@@ -483,6 +571,25 @@ function App() {
           </div>
         )}
         {activeTab === 'terminal' && <TerminalOutput output={terminalOutput} onClear={clearTerminal} />}
+        {activeTab === 'git' && (
+          <Suspense fallback={<div className="h-full flex items-center justify-center text-gray-500 text-sm">Loading...</div>}>
+            <div className="h-full flex flex-col">
+              {selectedDiff ? (
+                <DiffViewer
+                  diff={selectedDiff}
+                  onClose={() => setSelectedDiff(null)}
+                />
+              ) : (
+                <SourceControlPanel
+                  gitStatus={gitStatus}
+                  gitChanges={gitChanges}
+                  onDiffSelect={handleGitDiffSelect}
+                  onRefresh={handleGitRefresh}
+                />
+              )}
+            </div>
+          </Suspense>
+        )}
       </div>
     </Layout>
   );

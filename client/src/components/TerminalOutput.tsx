@@ -1,11 +1,14 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useMemo } from "react";
 
 interface TerminalOutputProps {
   output: string[];
   onClear?: () => void;
+  hideHeader?: boolean;
 }
 
-export function TerminalOutput({ output, onClear }: TerminalOutputProps) {
+const CHUNK_SIZE = 50;
+
+export function TerminalOutput({ output, onClear, hideHeader }: TerminalOutputProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom
@@ -16,27 +19,41 @@ export function TerminalOutput({ output, onClear }: TerminalOutputProps) {
     }
   }, [output]);
 
+  // Memoize converted HTML so existing lines aren't reprocessed on each append
+  const convertedLines = useMemo(() => output.map(convertAnsiToHtml), [output]);
+
+  // Group lines into chunks for content-visibility batching
+  const chunks = useMemo(() => {
+    const result: string[][] = [];
+    for (let i = 0; i < convertedLines.length; i += CHUNK_SIZE) {
+      result.push(convertedLines.slice(i, i + CHUNK_SIZE));
+    }
+    return result;
+  }, [convertedLines]);
+
   return (
     <div className="flex flex-col h-full bg-gray-950">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-red-500" />
-            <div className="w-3 h-3 rounded-full bg-yellow-500" />
-            <div className="w-3 h-3 rounded-full bg-green-500" />
+      {!hideHeader && (
+        <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-red-500" />
+              <div className="w-3 h-3 rounded-full bg-yellow-500" />
+              <div className="w-3 h-3 rounded-full bg-green-500" />
+            </div>
+            <span className="text-sm text-gray-400 ml-2">Terminal</span>
           </div>
-          <span className="text-sm text-gray-400 ml-2">Terminal</span>
+          {onClear && output.length > 0 && (
+            <button
+              onClick={onClear}
+              className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+            >
+              Clear
+            </button>
+          )}
         </div>
-        {onClear && output.length > 0 && (
-          <button
-            onClick={onClear}
-            className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
-          >
-            Clear
-          </button>
-        )}
-      </div>
+      )}
 
       {/* Output */}
       <div
@@ -46,12 +63,23 @@ export function TerminalOutput({ output, onClear }: TerminalOutputProps) {
         {output.length === 0 ? (
           <p className="text-gray-500">No output yet...</p>
         ) : (
-          output.map((line, index) => (
+          chunks.map((chunk, ci) => (
             <div
-              key={index}
-              className="text-gray-300 whitespace-pre-wrap break-all"
-              dangerouslySetInnerHTML={{ __html: convertAnsiToHtml(line) }}
-            />
+              key={ci}
+              style={
+                ci < chunks.length - 1
+                  ? { contentVisibility: "auto", containIntrinsicSize: `auto ${chunk.length * 1.4}em` }
+                  : undefined
+              }
+            >
+              {chunk.map((html, li) => (
+                <div
+                  key={ci * CHUNK_SIZE + li}
+                  className="text-gray-300 whitespace-pre-wrap break-all"
+                  dangerouslySetInnerHTML={{ __html: html }}
+                />
+              ))}
+            </div>
           ))
         )}
       </div>

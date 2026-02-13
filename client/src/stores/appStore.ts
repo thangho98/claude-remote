@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { persist } from 'zustand/middleware';
-import type { Message, Project, FileNode, Session, TokenUsage, SlashCommand } from '@shared/types';
+import type { Message, Project, FileNode, Session, TokenUsage, SlashCommand, GitStatusInfo, GitChange, GitDiffResult } from '@shared/types';
 
 interface AppState {
   // Auth
@@ -33,8 +33,14 @@ interface AppState {
   currentModel: string | null;
   tokenUsage: TokenUsage | null;
 
+  // Git
+  gitStatus: GitStatusInfo | null;
+  gitChanges: GitChange[];
+  selectedDiff: GitDiffResult | null;
+  bottomPanelTab: 'terminal' | 'git';
+
   // UI
-  activeTab: 'chat' | 'file' | 'files' | 'terminal';
+  activeTab: 'chat' | 'file' | 'files' | 'terminal' | 'git';
 
   // Commands
   commands: SlashCommand[];
@@ -81,8 +87,14 @@ interface AppActions {
   setCurrentModel: (model: string | null) => void;
   setTokenUsage: (usage: TokenUsage | null) => void;
 
+  // Git
+  setGitStatus: (status: GitStatusInfo | null) => void;
+  setGitChanges: (changes: GitChange[]) => void;
+  setSelectedDiff: (diff: GitDiffResult | null) => void;
+  setBottomPanelTab: (tab: 'terminal' | 'git') => void;
+
   // UI
-  setActiveTab: (tab: 'chat' | 'file' | 'files' | 'terminal') => void;
+  setActiveTab: (tab: 'chat' | 'file' | 'files' | 'terminal' | 'git') => void;
 
   // Commands
   setCommands: (commands: SlashCommand[]) => void;
@@ -107,6 +119,10 @@ export const useAppStore = create<AppState & AppActions>()(
       currentSession: null,
       currentModel: null,
       tokenUsage: null,
+      gitStatus: null,
+      gitChanges: [],
+      selectedDiff: null,
+      bottomPanelTab: 'terminal',
       activeTab: 'chat',
       commands: [],
 
@@ -135,6 +151,9 @@ export const useAppStore = create<AppState & AppActions>()(
           currentSession: null,
           currentModel: null,
           tokenUsage: null,
+          gitStatus: null,
+          gitChanges: [],
+          selectedDiff: null,
         }),
 
       // Messages
@@ -253,6 +272,12 @@ export const useAppStore = create<AppState & AppActions>()(
       setCurrentModel: (currentModel) => set({ currentModel }),
       setTokenUsage: (tokenUsage) => set({ tokenUsage }),
 
+      // Git
+      setGitStatus: (gitStatus) => set({ gitStatus }),
+      setGitChanges: (gitChanges) => set({ gitChanges }),
+      setSelectedDiff: (selectedDiff) => set({ selectedDiff }),
+      setBottomPanelTab: (bottomPanelTab) => set({ bottomPanelTab }),
+
       // UI
       setActiveTab: (activeTab) => set({ activeTab }),
 
@@ -302,6 +327,20 @@ export const useSessionStore = () =>
     setCurrentModel: s.setCurrentModel,
     tokenUsage: s.tokenUsage,
     setTokenUsage: s.setTokenUsage,
+  })));
+
+export const useGitStore = () =>
+  useAppStore(useShallow((s) => ({
+    gitStatus: s.gitStatus,
+    gitChanges: s.gitChanges,
+    selectedDiff: s.selectedDiff,
+    setSelectedDiff: s.setSelectedDiff,
+  })));
+
+export const useBottomPanelStore = () =>
+  useAppStore(useShallow((s) => ({
+    bottomPanelTab: s.bottomPanelTab,
+    setBottomPanelTab: s.setBottomPanelTab,
   })));
 
 export const useUIStore = () =>

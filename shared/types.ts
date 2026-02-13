@@ -9,7 +9,9 @@ export type WSClientEvent =
   | { type: 'session:switch'; sessionId: string }
   | { type: 'session:new' }
   | { type: 'session:resume'; sessionId: string }
-  | { type: 'commands:list' };
+  | { type: 'commands:list' }
+  | { type: 'git:status' }
+  | { type: 'git:diff'; path: string; staged?: boolean };
 
 // WebSocket Events: Server → Client
 export type WSServerEvent =
@@ -33,7 +35,11 @@ export type WSServerEvent =
   | { type: 'session:id'; sessionId: string }
   | { type: 'session:id'; sessionId: string }
   | { type: 'commands:list'; commands: SlashCommand[] }
-  | { type: 'message:append'; message: Message }; // For streaming updates that add a full message/block
+  | { type: 'message:append'; message: Message } // For streaming updates that add a full message/block
+  | { type: 'git:status'; status: GitStatusInfo }
+  | { type: 'git:changes'; changes: GitChange[] }
+  | { type: 'git:diff'; diff: GitDiffResult }
+  | { type: 'git:error'; error: string };
 
 // Domain Types
 export interface Project {
@@ -134,4 +140,48 @@ export interface SlashCommand {
   name: string;
   description: string;
   source: 'builtin' | 'project' | 'user';
+}
+
+// --- Git Types ---
+
+export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted';
+
+export interface GitChange {
+  path: string;
+  oldPath?: string;
+  status: GitFileStatus;
+  staged: boolean;
+  insertions?: number;
+  deletions?: number;
+}
+
+export interface GitStatusInfo {
+  branch: string;
+  tracking?: string;
+  ahead: number;
+  behind: number;
+  isGitRepo: boolean;
+}
+
+export interface GitDiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  header: string;
+  lines: GitDiffLine[];
+}
+
+export interface GitDiffLine {
+  type: 'add' | 'remove' | 'context';
+  content: string;
+  oldLineNumber?: number;
+  newLineNumber?: number;
+}
+
+export interface GitDiffResult {
+  path: string;
+  hunks: GitDiffHunk[];
+  isBinary: boolean;
+  rawDiff: string;
 }

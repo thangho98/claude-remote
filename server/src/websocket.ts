@@ -4,6 +4,7 @@ import { getFileTree, readFileContent, isPathSafe } from './services/file';
 import { listProjects } from './services/project';
 import { listSessions, getSessionInfo, getSessionMessages } from './services/session';
 import { listCommands } from './services/commands';
+import { isGitRepo, getGitStatus, getGitChanges, getGitDiff } from './services/git';
 import { getClaudeProvider } from './claude/providers';
 import { getOrCreateSession } from './claude/session';
 import { subscribeToRoom, unsubscribeAll, getSubscribedRooms } from './rooms';
@@ -89,6 +90,23 @@ async function handleEvent(ws: ServerWebSocket<WSData>, event: WSClientEvent) {
         const sessions = await listSessions(event.path);
         send(ws, { type: 'session:list', sessions });
         console.log(`📋 Sent ${sessions.length} sessions for ${event.path}`);
+
+        // Auto-send git status after project switch
+        try {
+          const isRepo = await isGitRepo(event.path);
+          if (isRepo) {
+            const gitStatus = await getGitStatus(event.path);
+            send(ws, { type: 'git:status', status: gitStatus });
+            const gitChanges = await getGitChanges(event.path);
+            send(ws, { type: 'git:changes', changes: gitChanges });
+            console.log(`🔀 Sent git status: ${gitStatus.branch} (${gitChanges.length} changes)`);
+          } else {
+            send(ws, { type: 'git:status', status: { branch: '', ahead: 0, behind: 0, isGitRepo: false } });
+            send(ws, { type: 'git:changes', changes: [] });
+          }
+        } catch (gitError) {
+          console.error('Failed to get git status on project switch:', gitError);
+        }
       } catch (error) {
         console.error(`❌ Error in project:switch:`, error);
         send(ws, { type: 'message:error', error: 'Failed to load project', id: '' });
@@ -117,6 +135,14 @@ async function handleEvent(ws: ServerWebSocket<WSData>, event: WSClientEvent) {
 
     case 'commands:list':
       await handleCommandsList(ws);
+      break;
+
+    case 'git:status':
+      await handleGitStatusEvent(ws);
+      break;
+
+    case 'git:diff':
+      await handleGitDiffEvent(ws, event.path, event.staged);
       break;
 
     default:
@@ -307,6 +333,46 @@ async function handleCommandsList(ws: ServerWebSocket<WSData>) {
   } catch (error) {
     console.error('Failed to list commands:', error);
     send(ws, { type: 'commands:list', commands: [] });
+  }
+}
+
+async function handleGitStatusEvent(ws: ServerWebSocket<WSData>) {
+  if (!ws.data.workingDirectory) {
+    send(ws, { type: 'git:error', error: 'No project selected' });
+    return;
+  }
+
+  try {
+    const isRepo = await isGitRepo(ws.data.workingDirectory);
+    if (!isRepo) {
+      send(ws, { type: 'git:status', status: { branch: '', ahead: 0, behind: 0, isGitRepo: false } });
+      send(ws, { type: 'git:changes', changes: [] });
+      return;
+    }
+
+    const status = await getGitStatus(ws.data.workingDirectory);
+    send(ws, { type: 'git:status', status });
+
+    const changes = await getGitChanges(ws.data.workingDirectory);
+    send(ws, { type: 'git:changes', changes });
+  } catch (error) {
+    console.error('Failed to get git status:', error);
+    send(ws, { type: 'git:error', error: 'Failed to get git status' });
+  }
+}
+
+async function handleGitDiffEvent(ws: ServerWebSocket<WSData>, path: string, staged?: boolean) {
+  if (!ws.data.workingDirectory) {
+    send(ws, { type: 'git:error', error: 'No project selected' });
+    return;
+  }
+
+  try {
+    const diff = await getGitDiff(ws.data.workingDirectory, path, staged);
+    send(ws, { type: 'git:diff', diff });
+  } catch (error) {
+    console.error(`Failed to get diff for ${path}:`, error);
+    send(ws, { type: 'git:error', error: `Failed to get diff for ${path}` });
   }
 }
 
