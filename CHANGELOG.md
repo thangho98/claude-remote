@@ -2,6 +2,23 @@
 
 All notable changes to claude-remote will be documented in this file.
 
+## [Unreleased] - 2026-02-13
+
+### Added
+- **File Viewer Zoom** - Zoom in/out with Ctrl+/- keyboard shortcuts (10px-24px font sizes)
+- **VS Code-style File Viewer** - Syntax highlighting, line numbers, breadcrumbs, status bar
+- **VS Code-style File Explorer** - 100+ file type icons with colors, folders collapsed by default
+- **Claude Config Loading** - Load settings from `~/.claude/settings.json` and projects from Claude data folder
+- **Project Last Modified** - Accurate lastModified from scanning all files in project
+
+### Changed
+- **Client Port** - Changed from 5173 to 5555 to avoid conflicts with other apps
+- **File Explorer Layout** - Removed root folder display, matches VS Code behavior
+- **Model Display** - Removed from UI (inaccurate due to CLI/SDK limitations)
+
+### Removed
+- **WebSocket Room Isolation Plan** - Deleted abandoned plan from docs/plans/
+
 ## [0.1.1] - 2026-02-02
 
 ### Added

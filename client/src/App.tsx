@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { v7 as uuidv7 } from 'uuid';
 import { useWebSocket } from './hooks/useWebSocket';
-import { useAppStore } from './stores/appStore';
+import {
+  useAppStore,
+  useAuthStore,
+  useConnectionStore,
+  useProjectStore,
+  useFileStore,
+  useMessageStore,
+  useLoadingStore,
+  useTerminalStore,
+  useSessionStore,
+  useUIStore,
+} from './stores/appStore';
 import { AuthScreen } from './components/AuthScreen';
 import { Layout } from './components/Layout';
 import { ChatPanel } from './components/ChatPanel';
@@ -9,102 +20,66 @@ import { FileExplorer } from './components/FileExplorer';
 import { FileViewer } from './components/FileViewer';
 import { TerminalOutput } from './components/TerminalOutput';
 import { SessionPanel } from './components/SessionPanel';
-import type { WSServerEvent, Message } from '@shared/types';
+import type { WSServerEvent, Message, Session } from '@shared/types';
 
 function App() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [reconnectAttempt, setReconnectAttempt] = useState(0);
 
-  const {
-    token,
-    setToken,
-    authenticated,
-    setAuthenticated,
-    isConnected,
-    setConnected,
-    messages,
-    setMessages,
-    addMessage,
-    updateMessage,
-    upsertMessage,
-    addToolUseToMessage,
-    addThinkingToMessage,
-    setMessageDone,
-    isLoading,
-    setLoading,
-    isThinking,
-    setThinking,
-    projects,
-    setProjects,
-    currentProject,
-    setCurrentProject,
-    fileTree,
-    setFileTree,
-    selectedFile,
-    setSelectedFile,
-    terminalOutput,
-    addTerminalOutput,
-    clearTerminal,
-    sessions,
-    setSessions,
-    currentSession,
-    setCurrentSession,
-    currentModel,
-    setCurrentModel,
-    tokenUsage,
-    setTokenUsage,
-    activeTab,
-    setActiveTab,
-    logout,
-    commands,
-    setCommands,
-  } = useAppStore();
+  const { token, setToken, authenticated, logout } = useAuthStore();
+  const { isConnected, setConnected } = useConnectionStore();
+  const { projects, currentProject, setCurrentProject } = useProjectStore();
+  const { fileTree, selectedFile, setSelectedFile } = useFileStore();
+  const { messages, addMessage, clearMessages } = useMessageStore();
+  const { isLoading, setLoading, isThinking } = useLoadingStore();
+  const { terminalOutput, clearTerminal } = useTerminalStore();
+  const { sessions, currentSession, setCurrentSession, setCurrentModel, tokenUsage, setTokenUsage } = useSessionStore();
+  const { activeTab, setActiveTab, commands } = useUIStore();
 
   // Handle incoming WebSocket messages
   const handleMessage = useCallback(
     (event: WSServerEvent) => {
-      // Use getState() to always get fresh messages, avoiding stale closure
-      const currentMessages = useAppStore.getState().messages;
+      // Use getState() directly for fresh state - no stale closures
+      const store = useAppStore.getState();
+      const currentMessages = store.messages;
 
       switch (event.type) {
         case 'auth:success':
-          setAuthenticated(true);
+          store.setAuthenticated(true);
           setAuthError(null);
           setIsConnecting(false);
           break;
 
         case 'auth:error':
           setAuthError(event.message);
-          setAuthenticated(false);
+          store.setAuthenticated(false);
           setIsConnecting(false);
           break;
 
         case 'project:list':
-          setProjects(event.projects);
+          store.setProjects(event.projects);
           break;
 
         case 'project:current':
-          setCurrentProject(event.project);
+          store.setCurrentProject(event.project);
           break;
 
         case 'file:tree':
-          setFileTree(event.tree);
+          store.setFileTree(event.tree);
           break;
 
         case 'file:content':
-          setSelectedFile({ path: event.path, content: event.content });
+          store.setSelectedFile({ path: event.path, content: event.content });
           break;
 
-        case 'message:append': {
-          upsertMessage(event.message);
+        case 'message:append':
+          store.upsertMessage(event.message);
           break;
-        }
 
         case 'message:chunk': {
           const existingMsg = currentMessages.find((m) => m.id === event.id);
           if (!existingMsg) {
-            addMessage({
+            store.addMessage({
               id: event.id,
               role: 'assistant',
               content: event.content,
@@ -112,13 +87,12 @@ function App() {
               isStreaming: true,
             });
           } else {
-            updateMessage(event.id, event.content);
+            store.updateMessage(event.id, event.content);
           }
           break;
         }
 
         case 'message:tool_use': {
-          // Parse toolInput
           let parsedInput: Record<string, unknown> = {};
           if (typeof event.toolInput === 'string' && event.toolInput) {
             try {
@@ -130,7 +104,7 @@ function App() {
 
           const existingMsg = currentMessages.find((m) => m.id === event.id);
           if (!existingMsg) {
-            addMessage({
+            store.addMessage({
               id: event.id,
               role: 'assistant',
               content: [
@@ -145,21 +119,21 @@ function App() {
               isStreaming: true,
             });
           } else {
-            addToolUseToMessage(event.id, event.toolName, event.toolInput);
+            store.addToolUseToMessage(event.id, event.toolName, event.toolInput);
           }
           break;
         }
 
         case 'message:done':
-          setMessageDone(event.id);
-          setLoading(false);
-          setThinking(false);
+          store.setMessageDone(event.id);
+          store.setLoading(false);
+          store.setThinking(false);
           break;
 
         case 'message:error':
-          setLoading(false);
-          setThinking(false);
-          addMessage({
+          store.setLoading(false);
+          store.setThinking(false);
+          store.addMessage({
             id: event.id || uuidv7(),
             role: 'assistant',
             content: `Error: ${event.error}`,
@@ -168,13 +142,13 @@ function App() {
           break;
 
         case 'message:thinking':
-          setThinking(event.isThinking);
+          store.setThinking(event.isThinking);
           break;
 
         case 'message:thinking_content': {
           const existingMsg = currentMessages.find((m) => m.id === event.id);
           if (!existingMsg) {
-            addMessage({
+            store.addMessage({
               id: event.id,
               role: 'assistant',
               content: [{ type: 'thinking', thinking: event.content }],
@@ -182,69 +156,47 @@ function App() {
               isStreaming: true,
             });
           } else {
-            addThinkingToMessage(event.id, event.content);
+            store.addThinkingToMessage(event.id, event.content);
           }
           break;
         }
 
         case 'terminal:output':
-          addTerminalOutput(event.content);
+          store.addTerminalOutput(event.content);
           break;
 
         case 'session:list':
-          setSessions(event.sessions);
+          store.setSessions(event.sessions);
           break;
 
         case 'session:current':
-          setCurrentSession(event.session);
+          store.setCurrentSession(event.session);
           break;
 
         case 'session:info':
-          setCurrentModel(event.model);
-          setTokenUsage(event.usage);
+          store.setCurrentModel(event.model);
+          store.setTokenUsage(event.usage);
           break;
 
         case 'session:messages':
-          setMessages(event.messages);
+          store.setMessages(event.messages);
           break;
 
         case 'session:id':
-          // New session created - update currentSessionId for future messages
           console.log(`📋 New session ID: ${event.sessionId}`);
           break;
 
         case 'commands:list':
-          setCommands(event.commands);
+          store.setCommands(event.commands);
           break;
       }
     },
-    [
-      setAuthenticated,
-      setProjects,
-      setCurrentProject,
-      setFileTree,
-      setSelectedFile,
-      setMessages,
-      addMessage,
-      updateMessage,
-      addToolUseToMessage,
-      addThinkingToMessage,
-      setMessageDone,
-      setLoading,
-      setThinking,
-      addTerminalOutput,
-      setSessions,
-      setCurrentSession,
-      setCurrentModel,
-      setTokenUsage,
-      setCommands,
-    ],
+    [],
   );
 
   const {
     error: wsError,
     connectionState,
-    isReconnecting,
     reconnectAttempts,
     connect,
     disconnect,
@@ -259,61 +211,61 @@ function App() {
     onDisconnect: () => {
       setConnected(false);
     },
-    onReconnect: (attempt) => {
-      setReconnectAttempt(attempt);
-    },
   });
 
   // Handle authentication
-  const handleAuth = (newToken: string) => {
+  const handleAuth = useCallback((newToken: string) => {
     setToken(newToken);
     setIsConnecting(true);
     setAuthError(null);
     connect(newToken);
-  };
+  }, [setToken, connect]);
 
   // Handle logout
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     disconnect();
     logout();
-  };
+  }, [disconnect, logout]);
 
   // Handle project selection
-  const handleProjectSelect = (project: typeof currentProject) => {
+  const handleProjectSelect = useCallback((project: typeof currentProject) => {
     if (project) {
       setCurrentProject(project);
       send({ type: 'project:switch', path: project.path });
-      // Commands need to be requested separately (sessions are auto-sent by server)
       send({ type: 'commands:list' });
     }
-  };
+  }, [setCurrentProject, send]);
 
   // Handle session selection
-  const handleSessionSelect = (sessionId: string) => {
+  const handleSessionSelect = useCallback((sessionId: string) => {
     send({ type: 'session:switch', sessionId });
-  };
+  }, [send]);
+
+  // Stable callback for mobile session modal (avoids recreating on every render)
+  const handleSessionSelectFromSession = useCallback(
+    (session: Session) => handleSessionSelect(session.id),
+    [handleSessionSelect],
+  );
 
   // Handle new session
-  const handleNewSession = () => {
+  const handleNewSession = useCallback(() => {
     setCurrentSession(null);
     setCurrentModel(null);
     setTokenUsage(null);
-    // Clear messages for new session
-    useAppStore.getState().clearMessages();
-    // Tell backend to clear session ID
+    clearMessages();
     send({ type: 'session:new' });
-  };
+  }, [setCurrentSession, setCurrentModel, setTokenUsage, clearMessages, send]);
 
   // Handle file selection
-  const handleFileSelect = (path: string) => {
+  const handleFileSelect = useCallback((path: string) => {
     send({ type: 'file:read', path });
     if (window.innerWidth < 1024) {
       setActiveTab('file');
     }
-  };
+  }, [send, setActiveTab]);
 
   // Handle sending messages
-  const handleSendMessage = (content: string) => {
+  const handleSendMessage = useCallback((content: string) => {
     console.log('📤 handleSendMessage called:', content.slice(0, 50));
 
     if (!isConnected) {
@@ -347,7 +299,7 @@ function App() {
         timestamp: new Date().toISOString(),
       });
     }
-  };
+  }, [isConnected, addMessage, setLoading, send]);
 
   // Auto-connect if we have a stored token
   useEffect(() => {
@@ -355,7 +307,6 @@ function App() {
       setIsConnecting(true);
       connect(token);
 
-      // Timeout for auth - if not authenticated after 10s, reset connecting state
       const timeout = setTimeout(() => {
         if (!authenticated) {
           setIsConnecting(false);
@@ -365,23 +316,24 @@ function App() {
 
       return () => {
         clearTimeout(timeout);
-        // Don't disconnect here - let reconnect logic handle it
       };
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync project and sessions after authentication
+  // Use currentProject?.path (string) as dep instead of currentProject (object)
+  // to avoid infinite loop: project:switch → server sends new project:current object →
+  // currentProject ref changes → effect fires again → project:switch again
+  const currentProjectPath = currentProject?.path;
   useEffect(() => {
     if (authenticated && isConnected) {
-      // Request commands (builtin + user level)
       send({ type: 'commands:list' });
 
-      if (currentProject) {
-        // Re-sync project with server (this will auto-send sessions and file tree)
-        send({ type: 'project:switch', path: currentProject.path });
+      if (currentProjectPath) {
+        send({ type: 'project:switch', path: currentProjectPath });
       }
     }
-  }, [authenticated, isConnected]);
+  }, [authenticated, isConnected, currentProjectPath, send]);
 
   // Show auth screen if not authenticated
   if (!token || !authenticated) {
@@ -395,15 +347,6 @@ function App() {
     );
   }
 
-  // Helper to get model display name
-  const getModelDisplayName = (model: string | null): string => {
-    if (!model || model === 'unknown') return '';
-    if (model.includes('opus')) return 'Opus 4.5';
-    if (model.includes('sonnet')) return 'Sonnet 4';
-    if (model.includes('haiku')) return 'Haiku';
-    return model;
-  };
-
   // Main app
   return (
     <Layout
@@ -414,7 +357,6 @@ function App() {
       onLogout={handleLogout}
       activeTab={activeTab}
       onTabChange={setActiveTab}
-      currentModel={getModelDisplayName(currentModel)}
       hasOpenFile={!!selectedFile}
       sidebar={
         <FileExplorer tree={fileTree} onFileSelect={handleFileSelect} selectedPath={selectedFile?.path} />
@@ -469,8 +411,6 @@ function App() {
             <SessionPanel
               sessions={sessions}
               currentSession={currentSession}
-              currentModel={currentModel}
-              tokenUsage={tokenUsage}
               onSessionSelect={handleSessionSelect}
               onNewSession={handleNewSession}
             />
@@ -483,7 +423,6 @@ function App() {
               isLoading={isLoading}
               isThinking={isThinking}
               currentFile={selectedFile?.path}
-              currentModel={currentModel}
               tokenUsage={tokenUsage}
               commands={commands}
             />
@@ -500,14 +439,13 @@ function App() {
             isLoading={isLoading}
             isThinking={isThinking}
             currentFile={selectedFile?.path}
-            currentModel={currentModel}
             tokenUsage={tokenUsage}
             commands={commands}
             // Session selector in mobile chat
             showSessionSelector
             sessions={sessions}
             currentSession={currentSession}
-            onSessionSelect={(session) => handleSessionSelect(session.id)}
+            onSessionSelect={handleSessionSelectFromSession}
             onNewSession={handleNewSession}
           />
         )}

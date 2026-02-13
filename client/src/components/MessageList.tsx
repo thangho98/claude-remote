@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, memo, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type {
@@ -11,8 +11,20 @@ import type {
   ToolResultBlock,
 } from '@shared/types';
 
-// Fullscreen image viewer modal
-function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface MessageListProps {
+  messages: Message[];
+}
+
+// ============================================================================
+// MEMOIZED SUB-COMPONENTS (Prevents unnecessary re-renders)
+// ============================================================================
+
+// Fullscreen image viewer modal - memoized
+const ImageLightbox = memo(function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
   return (
     <div
       className="fixed inset-0 z-100 bg-black/90 flex items-center justify-center cursor-zoom-out"
@@ -41,14 +53,10 @@ function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
       </div>
     </div>
   );
-}
+});
 
-interface MessageListProps {
-  messages: Message[];
-}
-
-// Content Modal for viewing full tool use/result content
-function ContentModal({
+// Content Modal for viewing full tool use/result content - memoized
+const ContentModal = memo(function ContentModal({
   title,
   content,
   isError,
@@ -129,7 +137,11 @@ function ContentModal({
       </div>
     </div>
   );
-}
+});
+
+// ============================================================================
+// UTILITY FUNCTIONS (Stable, no re-renders)
+// ============================================================================
 
 // Strip system tags from text (ide_opened_file, system-reminder, etc.)
 function stripSystemTags(text: string): string {
@@ -208,18 +220,26 @@ function getToolResults(content: string | ContentBlock[]): ToolResultBlock[] {
   return content.filter((block): block is ToolResultBlock => block?.type === 'tool_result');
 }
 
-// Render a thinking block with collapse/expand
-function ThinkingDisplay({ thinking }: { thinking: ThinkingBlock }) {
+// ============================================================================
+// MEMOIZED DISPLAY COMPONENTS
+// ============================================================================
+
+// Render a thinking block with collapse/expand - memoized
+const ThinkingDisplay = memo(function ThinkingDisplay({ thinking }: { thinking: ThinkingBlock }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Truncate for preview
-  const previewText =
-    thinking.thinking.length > 100 ? thinking.thinking.slice(0, 100) + '...' : thinking.thinking;
+  const previewText = useMemo(
+    () => (thinking.thinking.length > 100 ? thinking.thinking.slice(0, 100) + '...' : thinking.thinking),
+    [thinking.thinking],
+  );
+
+  const toggleExpanded = useCallback(() => setIsExpanded((prev) => !prev), []);
 
   return (
     <div className="my-2">
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={toggleExpanded}
         className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
       >
         <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />
@@ -242,11 +262,22 @@ function ThinkingDisplay({ thinking }: { thinking: ThinkingBlock }) {
       )}
     </div>
   );
-}
+});
 
-// Render an image block
-function ImageDisplay({ image, onImageClick }: { image: ImageBlock; onImageClick?: (src: string) => void }) {
-  const src = `data:${image.source.media_type};base64,${image.source.data}`;
+// Render an image block - memoized
+const ImageDisplay = memo(function ImageDisplay({
+  image,
+  onImageClick,
+}: {
+  image: ImageBlock;
+  onImageClick?: (src: string) => void;
+}) {
+  const src = useMemo(
+    () => `data:${image.source.media_type};base64,${image.source.data}`,
+    [image.source.media_type, image.source.data],
+  );
+
+  const handleClick = useCallback(() => onImageClick?.(src), [onImageClick, src]);
 
   return (
     <div className="my-2">
@@ -255,26 +286,34 @@ function ImageDisplay({ image, onImageClick }: { image: ImageBlock; onImageClick
         alt="Attached image"
         className="max-w-full rounded-lg border border-gray-600 max-h-[400px] object-contain cursor-zoom-in hover:opacity-90 transition-opacity"
         loading="lazy"
-        onClick={() => onImageClick?.(src)}
+        onClick={handleClick}
       />
     </div>
   );
-}
+});
 
-// Render a tool use block
-function ToolUseDisplay({ tool }: { tool: ToolUseBlock }) {
+// Render a tool use block - memoized
+const ToolUseDisplay = memo(function ToolUseDisplay({ tool }: { tool: ToolUseBlock }) {
   const [showModal, setShowModal] = useState(false);
-  const inputStr = typeof tool.input === 'string' ? tool.input : JSON.stringify(tool.input, null, 2);
 
-  // Truncate long inputs
-  const isTruncated = inputStr.length > 200;
-  const displayInput = isTruncated ? inputStr.slice(0, 200) + '...' : inputStr;
+  const { inputStr, isTruncated, displayInput } = useMemo(() => {
+    const inputStr = typeof tool.input === 'string' ? tool.input : JSON.stringify(tool.input, null, 2);
+    const isTruncated = inputStr.length > 200;
+    const displayInput = isTruncated ? inputStr.slice(0, 200) + '...' : inputStr;
+    return { inputStr, isTruncated, displayInput };
+  }, [tool.input]);
+
+  const handleClick = useCallback(() => {
+    if (isTruncated) setShowModal(true);
+  }, [isTruncated]);
+
+  const handleCloseModal = useCallback(() => setShowModal(false), []);
 
   return (
     <>
       <div
         className={`my-2 bg-gray-700/50 rounded-lg p-2 border border-gray-600 ${isTruncated ? 'cursor-pointer hover:bg-gray-700/70 transition-colors' : ''}`}
-        onClick={isTruncated ? () => setShowModal(true) : undefined}
+        onClick={handleClick}
       >
         <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -301,11 +340,11 @@ function ToolUseDisplay({ tool }: { tool: ToolUseBlock }) {
         )}
       </div>
       {showModal && (
-        <ContentModal title={`Tool: ${tool.name}`} content={inputStr} onClose={() => setShowModal(false)} />
+        <ContentModal title={`Tool: ${tool.name}`} content={inputStr} onClose={handleCloseModal} />
       )}
     </>
   );
-}
+});
 
 // Check if content contains image blocks (for tool results)
 function extractImagesFromToolResult(content: unknown[]): ImageBlock[] {
@@ -316,8 +355,8 @@ function extractImagesFromToolResult(content: unknown[]): ImageBlock[] {
   );
 }
 
-// Render a tool result block
-function ToolResultDisplay({
+// Render a tool result block - memoized
+const ToolResultDisplay = memo(function ToolResultDisplay({
   result,
   onImageClick,
 }: {
@@ -326,26 +365,32 @@ function ToolResultDisplay({
 }) {
   const [showModal, setShowModal] = useState(false);
 
-  // Check for images in array content
-  const images = Array.isArray(result.content) ? extractImagesFromToolResult(result.content) : [];
+  const { images, contentStr, isTruncated, displayContent } = useMemo(() => {
+    const images = Array.isArray(result.content) ? extractImagesFromToolResult(result.content) : [];
 
-  // Handle content that might be string or array
-  let contentStr = '';
-  if (typeof result.content === 'string') {
-    contentStr = result.content;
-  } else if (Array.isArray(result.content)) {
-    // Filter out image blocks and stringify the rest
-    const nonImageContent = result.content.filter(
-      (item) => typeof item !== 'object' || (item as { type?: string }).type !== 'image',
-    );
-    contentStr = nonImageContent.length > 0 ? JSON.stringify(nonImageContent, null, 2) : '';
-  } else {
-    contentStr = String(result.content || '');
-  }
+    let contentStr = '';
+    if (typeof result.content === 'string') {
+      contentStr = result.content;
+    } else if (Array.isArray(result.content)) {
+      const nonImageContent = result.content.filter(
+        (item) => typeof item !== 'object' || (item as { type?: string }).type !== 'image',
+      );
+      contentStr = nonImageContent.length > 0 ? JSON.stringify(nonImageContent, null, 2) : '';
+    } else {
+      contentStr = String(result.content || '');
+    }
 
-  // Truncate long results
-  const isTruncated = contentStr.length > 300;
-  const displayContent = isTruncated ? contentStr.slice(0, 300) + '...' : contentStr;
+    const isTruncated = contentStr.length > 300;
+    const displayContent = isTruncated ? contentStr.slice(0, 300) + '...' : contentStr;
+
+    return { images, contentStr, isTruncated, displayContent };
+  }, [result.content]);
+
+  const handleClick = useCallback(() => {
+    if (isTruncated) setShowModal(true);
+  }, [isTruncated]);
+
+  const handleCloseModal = useCallback(() => setShowModal(false), []);
 
   return (
     <>
@@ -353,7 +398,7 @@ function ToolResultDisplay({
         className={`my-2 rounded-lg p-2 border ${
           result.is_error ? 'bg-red-900/30 border-red-700' : 'bg-green-900/30 border-green-700'
         } ${isTruncated ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-        onClick={isTruncated ? () => setShowModal(true) : undefined}
+        onClick={handleClick}
       >
         <div className="flex items-center gap-2 text-xs mb-1">
           {result.is_error ? (
@@ -407,15 +452,15 @@ function ToolResultDisplay({
           title={result.is_error ? 'Error Result' : 'Tool Result'}
           content={contentStr}
           isError={result.is_error}
-          onClose={() => setShowModal(false)}
+          onClose={handleCloseModal}
         />
       )}
     </>
   );
-}
+});
 
-// Command Display Component
-function CommandDisplay({ command, name }: { command: string; name?: string }) {
+// Command Display Component - memoized
+const CommandDisplay = memo(function CommandDisplay({ command, name }: { command: string; name?: string }) {
   return (
     <div className="flex flex-col gap-1 my-2 bg-gray-900/50 rounded-lg p-3 border border-gray-700/50">
       <div className="flex items-center gap-2 text-xs font-medium text-emerald-400">
@@ -428,40 +473,43 @@ function CommandDisplay({ command, name }: { command: string; name?: string }) {
       {name && name !== command && <div className="text-xs text-gray-500 font-mono">Action: {command}</div>}
     </div>
   );
-}
+});
 
-// Copy Button Component
-function CopyButton({ text, className = '' }: { text: string; className?: string }) {
+// Copy Button Component - memoized
+const CopyButton = memo(function CopyButton({ text, className = '' }: { text: string; className?: string }) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = async (e: any) => {
-    e.stopPropagation();
+  const handleCopy = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
 
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        // Fallback for non-secure contexts (e.g. HTTP local mobile testing)
-        const textArea = document.createElement('textarea');
-        textArea.value = text;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-9999px';
-        textArea.style.top = '0';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        try {
-          document.execCommand('copy');
-        } finally {
-          textArea.remove();
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // Fallback for non-secure contexts (e.g. HTTP local mobile testing)
+          const textArea = document.createElement('textarea');
+          textArea.value = text;
+          textArea.style.position = 'fixed';
+          textArea.style.left = '-9999px';
+          textArea.style.top = '0';
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          try {
+            document.execCommand('copy');
+          } finally {
+            textArea.remove();
+          }
         }
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error('Failed to copy text: ', err);
       }
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy text: ', err);
-    }
-  };
+    },
+    [text],
+  );
 
   return (
     <button
@@ -487,7 +535,211 @@ function CopyButton({ text, className = '' }: { text: string; className?: string
       )}
     </button>
   );
+});
+
+// ============================================================================
+// MESSAGE ITEM COMPONENT (Individual message - memoized to prevent re-renders)
+// ============================================================================
+
+interface MessageItemProps {
+  message: Message;
+  onImageClick: (src: string) => void;
 }
+
+const MessageItem = memo(function MessageItem({ message, onImageClick }: MessageItemProps) {
+  // Memoize all derived data to prevent recalculation on parent re-renders
+  const {
+    textContent,
+    thinkingBlocks,
+    imageBlocks,
+    toolUses,
+    toolResults,
+    commandInfo,
+    isUserMessage,
+    isToolResultOnly,
+    hasVisibleContent,
+  } = useMemo(() => {
+    let textContent = '';
+    let thinkingBlocks: ThinkingBlock[] = [];
+    let imageBlocks: ImageBlock[] = [];
+    let toolUses: ToolUseBlock[] = [];
+    let toolResults: ToolResultBlock[] = [];
+    let commandInfo: { message?: string; name?: string } | null = null;
+    const isUser = message.role === 'user';
+
+    try {
+      let displayContent = message.content;
+
+      if (typeof message.content === 'string') {
+        const cmdMsgMatch = message.content.match(/<command-message>(.*?)<\/command-message>/);
+        const cmdNameMatch = message.content.match(/<command-name>(.*?)<\/command-name>/);
+
+        if (cmdMsgMatch || cmdNameMatch) {
+          commandInfo = {
+            message: cmdMsgMatch ? cmdMsgMatch[1] : undefined,
+            name: cmdNameMatch ? cmdNameMatch[1] : undefined,
+          };
+          displayContent = message.content
+            .replace(/<command-message>[\s\S]*?<\/command-message>/g, '')
+            .replace(/<command-name>[\s\S]*?<\/command-name>/g, '');
+        }
+      } else if (Array.isArray(message.content)) {
+        displayContent = message.content.map((block: ContentBlock) => {
+          if (block.type === 'text') {
+            const cmdMsgMatch = block.text.match(/<command-message>(.*?)<\/command-message>/);
+            const cmdNameMatch = block.text.match(/<command-name>(.*?)<\/command-name>/);
+
+            if (cmdMsgMatch || cmdNameMatch) {
+              if (!commandInfo) {
+                commandInfo = {
+                  message: cmdMsgMatch ? cmdMsgMatch[1] : undefined,
+                  name: cmdNameMatch ? cmdNameMatch[1] : undefined,
+                };
+              }
+              return {
+                ...block,
+                text: block.text
+                  .replace(/<command-message>[\s\S]*?<\/command-message>/g, '')
+                  .replace(/<command-name>[\s\S]*?<\/command-name>/g, ''),
+              };
+            }
+          }
+          return block;
+        });
+      }
+
+      textContent = getTextContent(displayContent, true);
+      thinkingBlocks = getThinkingBlocks(message.content);
+      imageBlocks = getImageBlocks(message.content);
+      toolUses = getToolUses(message.content);
+      toolResults = getToolResults(message.content);
+    } catch (e) {
+      console.error('Error parsing message content:', e, message);
+      textContent =
+        typeof message.content === 'string' ? stripSystemTags(message.content) : '[Error displaying message]';
+    }
+
+    const isToolResultOnly = toolResults.length > 0 && !textContent.trim() && !commandInfo;
+    const isUserMessage = isUser && !isToolResultOnly;
+    const hasVisibleContent =
+      textContent.trim() ||
+      commandInfo ||
+      thinkingBlocks.length > 0 ||
+      imageBlocks.length > 0 ||
+      toolUses.length > 0 ||
+      toolResults.length > 0 ||
+      message.isStreaming;
+
+    return {
+      textContent,
+      thinkingBlocks,
+      imageBlocks,
+      toolUses,
+      toolResults,
+      commandInfo,
+      isUserMessage,
+      isToolResultOnly,
+      hasVisibleContent,
+    };
+  }, [message]);
+
+  // Don't render if no visible content
+  if (!hasVisibleContent) {
+    return null;
+  }
+
+  return (
+    <div className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-3 relative group ${
+          isUserMessage
+            ? 'bg-orange-600 text-white rounded-br-md'
+            : isToolResultOnly
+              ? 'bg-gray-800/50 text-gray-100 rounded-bl-md border border-gray-700'
+              : 'bg-gray-800 text-gray-100 rounded-bl-md'
+        }`}
+      >
+        {thinkingBlocks.length > 0 && (
+          <div className="mb-2">
+            {thinkingBlocks.map((thinking, idx) => (
+              <ThinkingDisplay key={idx} thinking={thinking} />
+            ))}
+          </div>
+        )}
+
+        {imageBlocks.length > 0 && (
+          <div className="mb-2">
+            {imageBlocks.map((image, idx) => (
+              <ImageDisplay key={idx} image={image} onImageClick={onImageClick} />
+            ))}
+          </div>
+        )}
+
+        {commandInfo && <CommandDisplay command={commandInfo.message || ''} name={commandInfo.name} />}
+
+        {textContent &&
+          (message.role === 'assistant' ? (
+            <div className="prose prose-invert prose-sm max-w-none overflow-x-hidden">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  pre: ({ children }) => (
+                    <pre className="bg-gray-900 rounded-lg p-3 overflow-x-auto text-sm">{children}</pre>
+                  ),
+                  code: ({ className, children, ...props }) => {
+                    const isInline = !className;
+                    return isInline ? (
+                      <code className="bg-gray-700 px-1.5 py-0.5 rounded-sm text-sm" {...props}>
+                        {children}
+                      </code>
+                    ) : (
+                      <code className={className} {...props}>
+                        {children}
+                      </code>
+                    );
+                  },
+                }}
+              >
+                {textContent}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <p className="whitespace-pre-wrap wrap-break-word">{textContent}</p>
+          ))}
+
+        {toolUses.length > 0 && (
+          <div className="mt-2">
+            {toolUses.map((tool) => (
+              <ToolUseDisplay key={tool.id} tool={tool} />
+            ))}
+          </div>
+        )}
+
+        {toolResults.length > 0 && (
+          <div className="mt-2">
+            {toolResults.map((result) => (
+              <ToolResultDisplay key={result.tool_use_id} result={result} onImageClick={onImageClick} />
+            ))}
+          </div>
+        )}
+
+        {message.isStreaming && (
+          <span className="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-1 rounded-sm" />
+        )}
+
+        {textContent && (
+          <div className="flex justify-end mt-2 opacity-50 hover:opacity-100 transition-opacity">
+            <CopyButton text={textContent} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 
 export function MessageList({ messages }: MessageListProps) {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -541,194 +793,9 @@ export function MessageList({ messages }: MessageListProps) {
   return (
     <>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message) => {
-          // Safely extract content with error handling
-          let textContent = '';
-          let thinkingBlocks: ThinkingBlock[] = [];
-          let imageBlocks: ImageBlock[] = [];
-          let toolUses: ToolUseBlock[] = [];
-          let toolResults: ToolResultBlock[] = [];
-          let commandInfo: { message?: string; name?: string } | null = null;
-          const isUser = message.role === 'user';
-
-          try {
-            // Strip system tags for user messages (but keep command tags for parsing)
-
-            // Extract command tags if present
-            let displayContent = message.content;
-
-            if (typeof message.content === 'string') {
-              const cmdMsgMatch = message.content.match(/<command-message>(.*?)<\/command-message>/);
-              const cmdNameMatch = message.content.match(/<command-name>(.*?)<\/command-name>/);
-
-              if (cmdMsgMatch || cmdNameMatch) {
-                commandInfo = {
-                  message: cmdMsgMatch ? cmdMsgMatch[1] : undefined,
-                  name: cmdNameMatch ? cmdNameMatch[1] : undefined,
-                };
-                // Remove tags from display content
-                displayContent = message.content
-                  .replace(/<command-message>[\s\S]*?<\/command-message>/g, '')
-                  .replace(/<command-name>[\s\S]*?<\/command-name>/g, '');
-              }
-            } else if (Array.isArray(message.content)) {
-              displayContent = message.content.map((block: any) => {
-                if (block.type === 'text') {
-                  const cmdMsgMatch = block.text.match(/<command-message>(.*?)<\/command-message>/);
-                  const cmdNameMatch = block.text.match(/<command-name>(.*?)<\/command-name>/);
-
-                  if (cmdMsgMatch || cmdNameMatch) {
-                    if (!commandInfo) {
-                      commandInfo = {
-                        message: cmdMsgMatch ? cmdMsgMatch[1] : undefined,
-                        name: cmdNameMatch ? cmdNameMatch[1] : undefined,
-                      };
-                    }
-                    return {
-                      ...block,
-                      text: block.text
-                        .replace(/<command-message>[\s\S]*?<\/command-message>/g, '')
-                        .replace(/<command-name>[\s\S]*?<\/command-name>/g, ''),
-                    };
-                  }
-                }
-                return block;
-              });
-            }
-
-            textContent = getTextContent(displayContent, true); // Always strip system tags and workflow content
-            thinkingBlocks = getThinkingBlocks(message.content);
-            imageBlocks = getImageBlocks(message.content);
-            toolUses = getToolUses(message.content);
-            toolResults = getToolResults(message.content);
-          } catch (e) {
-            console.error('Error parsing message content:', e, message);
-            textContent =
-              typeof message.content === 'string'
-                ? stripSystemTags(message.content)
-                : '[Error displaying message]';
-          }
-
-          // Check if this is a tool result message (user role but contains tool_result)
-          const isToolResultOnly = toolResults.length > 0 && !textContent.trim() && !commandInfo;
-          const isUserMessage = isUser && !isToolResultOnly;
-
-          // Skip rendering if message has no visible content
-          const hasVisibleContent =
-            textContent.trim() ||
-            commandInfo ||
-            thinkingBlocks.length > 0 ||
-            imageBlocks.length > 0 ||
-            toolUses.length > 0 ||
-            toolResults.length > 0 ||
-            message.isStreaming;
-
-          if (!hasVisibleContent) {
-            return null;
-          }
-
-          return (
-            <div key={message.id} className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-3 relative group ${
-                  isUserMessage
-                    ? 'bg-orange-600 text-white rounded-br-md'
-                    : isToolResultOnly
-                      ? 'bg-gray-800/50 text-gray-100 rounded-bl-md border border-gray-700'
-                      : 'bg-gray-800 text-gray-100 rounded-bl-md'
-                }`}
-              >
-                {/* Thinking blocks (from assistant) */}
-                {thinkingBlocks.length > 0 && (
-                  <div className="mb-2">
-                    {thinkingBlocks.map((thinking, idx) => (
-                      <ThinkingDisplay key={idx} thinking={thinking} />
-                    ))}
-                  </div>
-                )}
-
-                {/* Image blocks */}
-                {imageBlocks.length > 0 && (
-                  <div className="mb-2">
-                    {imageBlocks.map((image, idx) => (
-                      <ImageDisplay key={idx} image={image} onImageClick={handleImageClick} />
-                    ))}
-                  </div>
-                )}
-
-                {/* Command Display */}
-                {commandInfo && (
-                  <CommandDisplay command={commandInfo.message || ''} name={commandInfo.name} />
-                )}
-
-                {/* Text content */}
-                {textContent &&
-                  (message.role === 'assistant' ? (
-                    <div className="prose prose-invert prose-sm max-w-none overflow-x-hidden">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          pre: ({ children }) => (
-                            <pre className="bg-gray-900 rounded-lg p-3 overflow-x-auto text-sm">
-                              {children}
-                            </pre>
-                          ),
-                          code: ({ className, children, ...props }) => {
-                            const isInline = !className;
-                            return isInline ? (
-                              <code className="bg-gray-700 px-1.5 py-0.5 rounded-sm text-sm" {...props}>
-                                {children}
-                              </code>
-                            ) : (
-                              <code className={className} {...props}>
-                                {children}
-                              </code>
-                            );
-                          },
-                        }}
-                      >
-                        {textContent}
-                      </ReactMarkdown>
-                    </div>
-                  ) : (
-                    <p className="whitespace-pre-wrap wrap-break-word">{textContent}</p>
-                  ))}
-
-                {/* Tool uses (from assistant) */}
-                {toolUses.length > 0 && (
-                  <div className="mt-2">
-                    {toolUses.map((tool) => (
-                      <ToolUseDisplay key={tool.id} tool={tool} />
-                    ))}
-                  </div>
-                )}
-
-                {/* Tool results (from user/system) */}
-                {toolResults.length > 0 && (
-                  <div className="mt-2">
-                    {toolResults.map((result) => (
-                      <ToolResultDisplay
-                        key={result.tool_use_id}
-                        result={result}
-                        onImageClick={handleImageClick}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {message.isStreaming && (
-                  <span className="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-1 rounded-sm" />
-                )}
-                {/* Copy Button Footer */}
-                {textContent && (
-                  <div className="flex justify-end mt-2 opacity-50 hover:opacity-100 transition-opacity">
-                    <CopyButton text={textContent} />
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {messages.map((message) => (
+          <MessageItem key={message.id} message={message} onImageClick={handleImageClick} />
+        ))}
       </div>
       {/* Fullscreen image lightbox */}
       {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={closeLightbox} />}

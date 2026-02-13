@@ -18,7 +18,6 @@ interface LayoutProps {
   activeTab: "chat" | "file" | "files" | "terminal";
   onTabChange: (tab: "chat" | "file" | "files" | "terminal") => void;
   hasOpenFile?: boolean;
-  currentModel?: string | null;
 }
 
 export function Layout({
@@ -34,7 +33,6 @@ export function Layout({
   onLogout,
   activeTab,
   onTabChange,
-  currentModel,
   hasOpenFile,
 }: LayoutProps) {
   const isReconnecting = connectionState === "reconnecting";

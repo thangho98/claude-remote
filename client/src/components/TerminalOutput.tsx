@@ -59,37 +59,40 @@ export function TerminalOutput({ output, onClear }: TerminalOutputProps) {
   );
 }
 
+// Hoisted ANSI regex and color map (avoid recreation per call)
+// eslint-disable-next-line no-control-regex
+const ANSI_REGEX = /\x1b\[([0-9;]+)m/g;
+const ANSI_COLORS: Record<string, string> = {
+  "30": "color: #4a4a4a",
+  "31": "color: #ff6b6b",
+  "32": "color: #69db7c",
+  "33": "color: #ffd43b",
+  "34": "color: #74c0fc",
+  "35": "color: #da77f2",
+  "36": "color: #66d9e8",
+  "37": "color: #f8f9fa",
+  "90": "color: #868e96",
+  "91": "color: #ff8787",
+  "92": "color: #8ce99a",
+  "93": "color: #ffe066",
+  "94": "color: #91a7ff",
+  "95": "color: #e599f7",
+  "96": "color: #99e9f2",
+  "97": "color: #ffffff",
+  "1": "font-weight: bold",
+  "0": "",
+};
+
 // Simple ANSI to HTML converter
 function convertAnsiToHtml(text: string): string {
-  // Basic ANSI color codes
-  const ansiColors: Record<string, string> = {
-    "30": "color: #4a4a4a",
-    "31": "color: #ff6b6b",
-    "32": "color: #69db7c",
-    "33": "color: #ffd43b",
-    "34": "color: #74c0fc",
-    "35": "color: #da77f2",
-    "36": "color: #66d9e8",
-    "37": "color: #f8f9fa",
-    "90": "color: #868e96",
-    "91": "color: #ff8787",
-    "92": "color: #8ce99a",
-    "93": "color: #ffe066",
-    "94": "color: #91a7ff",
-    "95": "color: #e599f7",
-    "96": "color: #99e9f2",
-    "97": "color: #ffffff",
-    "1": "font-weight: bold",
-    "0": "",
-  };
-
   let result = text;
 
   // Replace ANSI codes with spans
-  result = result.replace(/\x1b\[([0-9;]+)m/g, (_, codes) => {
+  ANSI_REGEX.lastIndex = 0;
+  result = result.replace(ANSI_REGEX, (_, codes) => {
     const codeList = codes.split(";");
     const styles = codeList
-      .map((code: string) => ansiColors[code])
+      .map((code: string) => ANSI_COLORS[code])
       .filter(Boolean)
       .join("; ");
 

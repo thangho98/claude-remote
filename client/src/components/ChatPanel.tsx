@@ -1,6 +1,7 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useCallback, memo } from "react";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
+import { formatRelativeTime, truncatePrompt } from "../utils/format";
 import type { Message, TokenUsage, Session, SlashCommand } from "@shared/types";
 
 interface ChatPanelProps {
@@ -9,7 +10,6 @@ interface ChatPanelProps {
   isLoading?: boolean;
   isThinking?: boolean;
   currentFile?: string | null;
-  currentModel?: string | null;
   tokenUsage?: TokenUsage | null;
   // Session selector props (for mobile)
   sessions?: Session[];
@@ -21,28 +21,8 @@ interface ChatPanelProps {
   commands?: SlashCommand[];
 }
 
-function formatRelativeTime(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
-}
-
-function truncatePrompt(text: string, maxLen = 50): string {
-  if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen) + "...";
-}
-
 // Session selector modal for mobile
-function SessionModal({
+const SessionModal = memo(function SessionModal({
   sessions,
   currentSession,
   onSelect,
@@ -142,7 +122,7 @@ function SessionModal({
       </div>
     </div>
   );
-}
+});
 
 export function ChatPanel({
   messages,
@@ -150,7 +130,6 @@ export function ChatPanel({
   isLoading,
   isThinking,
   currentFile,
-  currentModel,
   tokenUsage,
   sessions,
   currentSession,
@@ -161,6 +140,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showSessionModal, setShowSessionModal] = useState(false);
+  const closeSessionModal = useCallback(() => setShowSessionModal(false), []);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -225,7 +205,7 @@ export function ChatPanel({
           currentSession={currentSession ?? null}
           onSelect={onSessionSelect}
           onNewSession={onNewSession}
-          onClose={() => setShowSessionModal(false)}
+          onClose={closeSessionModal}
         />
       )}
 
@@ -273,7 +253,6 @@ export function ChatPanel({
         disabled={isLoading}
         placeholder={isThinking ? "Claude is thinking..." : isLoading ? "Processing..." : "Ask anything..."}
         currentFile={currentFile}
-        currentModel={currentModel}
         tokenUsage={tokenUsage}
         commands={commands}
       />

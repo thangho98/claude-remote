@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import type { TokenUsage, SlashCommand } from "@shared/types";
 
 interface MessageInputProps {
@@ -6,7 +6,6 @@ interface MessageInputProps {
   disabled?: boolean;
   placeholder?: string;
   currentFile?: string | null;
-  currentModel?: string | null;
   tokenUsage?: TokenUsage | null;
   commands?: SlashCommand[];
 }
@@ -19,7 +18,7 @@ function formatTokens(count: number): string {
 
 const CONTEXT_WINDOW = 150000;
 
-function ContextPieChart({
+const ContextPieChart = memo(function ContextPieChart({
   percentage,
   current,
   max,
@@ -81,15 +80,7 @@ function ContextPieChart({
       </div>
     </div>
   );
-}
-
-function getModelDisplayName(model: string | null | undefined): string {
-  if (!model || model === "unknown") return "";
-  if (model.includes("opus")) return "Opus 4.5";
-  if (model.includes("sonnet")) return "Sonnet 4";
-  if (model.includes("haiku")) return "Haiku";
-  return model;
-}
+});
 
 function getSourceBadge(source: SlashCommand["source"]) {
   switch (source) {
@@ -115,7 +106,6 @@ export function MessageInput({
   disabled,
   placeholder = "Ask anything...",
   currentFile,
-  currentModel,
   tokenUsage,
   commands = [],
 }: MessageInputProps) {
@@ -126,9 +116,12 @@ export function MessageInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Filter commands based on input
-  const filteredCommands = commands.filter((cmd) =>
-    cmd.name.toLowerCase().includes(commandFilter.toLowerCase())
+  // Memoize filtered commands to avoid recalculation on every render
+  const filteredCommands = useMemo(() =>
+    commands.filter((cmd) =>
+      cmd.name.toLowerCase().includes(commandFilter.toLowerCase())
+    ),
+    [commands, commandFilter]
   );
 
   // Reset selected index when filter changes
@@ -193,9 +186,10 @@ export function MessageInput({
     handleSubmit();
   };
 
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  // Memoize isMobile check
+  const isMobile = useMemo(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent), []);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     // Handle command dropdown navigation
     if (showCommands && filteredCommands.length > 0) {
       if (e.key === "ArrowDown") {
@@ -229,9 +223,9 @@ export function MessageInput({
       e.preventDefault();
       handleSubmit();
     }
-  };
+  }, [showCommands, filteredCommands.length, selectedIndex, isMobile]);
 
-  const handleInput = () => {
+  const handleInput = useCallback(() => {
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = "auto";
@@ -239,9 +233,9 @@ export function MessageInput({
       textarea.style.height = `${newHeight}px`;
     }
     updateHasContent();
-  };
+  }, [updateHasContent]);
 
-  const handleCommandButtonClick = () => {
+  const handleCommandButtonClick = useCallback(() => {
     if (textareaRef.current) {
       textareaRef.current.value = "/";
       textareaRef.current.focus();
@@ -249,13 +243,11 @@ export function MessageInput({
       setCommandFilter("");
       setHasContent(true);
     }
-  };
+  }, []);
 
-  const getFileName = (path: string) => {
+  const getFileName = useCallback((path: string) => {
     return path.split("/").pop() || path;
-  };
-
-  const modelName = getModelDisplayName(currentModel);
+  }, []);
 
   return (
     <div className="p-2 lg:p-3 border-t border-gray-700 bg-gray-900">

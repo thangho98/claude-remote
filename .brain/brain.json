@@ -2,7 +2,7 @@
   "meta": {
     "schema_version": "1.1.0",
     "awf_version": "3.3.0",
-    "last_updated": "2026-02-03T00:04:00+07:00"
+    "last_updated": "2026-02-13T18:00:00+07:00"
   },
   "project": {
     "name": "claude-remote",
@@ -189,7 +189,12 @@
     {
       "name": "File Explorer",
       "status": "implemented",
-      "description": "Browse and view project files"
+      "description": "VS Code-style file tree with 100+ file type icons, collapsed by default"
+    },
+    {
+      "name": "File Viewer",
+      "status": "implemented",
+      "description": "VS Code-style file viewer with syntax highlighting, line numbers, breadcrumbs, status bar, and zoom (Ctrl+/-)"
     },
     {
       "name": "Real-time Streaming",
@@ -232,11 +237,6 @@
       "description": "Parse and display encoded command tags as clean UI blocks"
     },
     {
-      "name": "WebSocket Room Isolation",
-      "status": "partial",
-      "description": "Server supports Pub/Sub rooms but currently uses direct send() for simplicity"
-    },
-    {
       "name": "Tool Content Popup",
       "status": "implemented",
       "description": "Long tool use/result content is truncated, click to expand in fullscreen modal"
@@ -245,6 +245,16 @@
       "name": "AWF Content Filtering",
       "status": "implemented",
       "description": "Strip workflow content (YAML frontmatter, markdown body) from displayed messages"
+    },
+    {
+      "name": "Claude Config Loading",
+      "status": "implemented",
+      "description": "Load Claude settings from ~/.claude/settings.json and projects from ~/Library/Application Support/Claude/projects/"
+    },
+    {
+      "name": "Project Last Modified",
+      "status": "implemented",
+      "description": "Calculate project lastModified by scanning all files and picking the latest mtime"
     }
   ],
   "knowledge_items": {
@@ -374,6 +384,37 @@
         "issue": "Empty message bubble after stripping workflow content",
         "solution": "Check hasVisibleContent before rendering, return null if no text/tools/thinking/images",
         "file": "client/src/components/MessageList.tsx"
+      },
+      {
+        "issue": "Port 5173 conflicts with other apps",
+        "solution": "Changed client port to 5555 in vite.config.ts and README.md",
+        "files": [
+          "client/vite.config.ts",
+          "README.md"
+        ]
+      },
+      {
+        "issue": "Model display inaccurate (CLI/SDK don't expose model in stream)",
+        "solution": "Removed model display from UI entirely (Layout.tsx, MessageInput.tsx)",
+        "files": [
+          "client/src/components/Layout.tsx",
+          "client/src/components/MessageInput.tsx"
+        ]
+      },
+      {
+        "issue": "File Explorer showed root folder name unlike VS Code",
+        "solution": "Render children directly without root folder wrapper",
+        "file": "client/src/components/FileExplorer.tsx"
+      },
+      {
+        "issue": "File icons were generic/boring",
+        "solution": "Added 100+ file extensions and 40+ special files with VS Code-like colors and text badges",
+        "file": "client/src/components/FileExplorer.tsx"
+      },
+      {
+        "issue": "Folders expanded by default causing clutter",
+        "solution": "Changed isOpen default from depth < 2 to false",
+        "file": "client/src/components/FileExplorer.tsx"
       }
     ],
     "conventions": [
@@ -395,6 +436,7 @@
     "server/src/": {
       "index.ts": "Entry point, Elysia server setup",
       "websocket.ts": "WebSocket event handlers",
+      "rooms.ts": "WebSocket room management (Pub/Sub)",
       "claude/types.ts": "Provider interface definitions",
       "claude/session.ts": "Session management",
       "claude/providers/cli.ts": "CLI subprocess provider",
@@ -404,16 +446,22 @@
       "services/session.ts": "Session listing and info",
       "services/project.ts": "Project discovery",
       "services/file.ts": "File operations",
+      "services/claudeConfig.ts": "Load Claude config from ~/.claude/settings.json",
       "middleware/auth.ts": "Authentication"
     },
     "client/src/": {
       "App.tsx": "Main app component, WebSocket handling",
+      "components/Layout.tsx": "Main layout with sidebar, chat, terminal panels",
+      "components/AuthScreen.tsx": "Authentication screen",
       "components/MessageInput.tsx": "Chat input with slash command autocomplete",
+      "components/MessageList.tsx": "Message display with tool popups, copy, command UI",
       "components/ChatPanel.tsx": "Chat container",
-      "components/MessageList.tsx": "Message display",
       "components/SessionPanel.tsx": "Session list sidebar",
-      "components/FileExplorer.tsx": "File tree browser",
-      "components/FileViewer.tsx": "File content viewer",
+      "components/ProjectSelector.tsx": "Project switcher dropdown",
+      "components/FileExplorer.tsx": "VS Code-style file tree with icons",
+      "components/FileViewer.tsx": "VS Code-style file viewer with syntax highlighting, zoom",
+      "components/TerminalOutput.tsx": "Terminal output panel",
+      "hooks/useWebSocket.ts": "WebSocket hook with auto-reconnect",
       "stores/appStore.ts": "Zustand state store"
     },
     "shared/": {

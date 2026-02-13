@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import type { FileNode } from "@shared/types";
 
 interface FileExplorerProps {
@@ -7,7 +7,7 @@ interface FileExplorerProps {
   selectedPath?: string;
 }
 
-export function FileExplorer({
+export const FileExplorer = memo(function FileExplorer({
   tree,
   onFileSelect,
   selectedPath,
@@ -44,7 +44,7 @@ export function FileExplorer({
       )}
     </div>
   );
-}
+});
 
 interface FileTreeNodeProps {
   node: FileNode;
@@ -53,7 +53,7 @@ interface FileTreeNodeProps {
   selectedPath?: string;
 }
 
-function FileTreeNode({
+const FileTreeNode = memo(function FileTreeNode({
   node,
   depth,
   onFileSelect,
@@ -64,7 +64,7 @@ function FileTreeNode({
 
   const handleClick = () => {
     if (node.type === "directory") {
-      setIsOpen(!isOpen);
+      setIsOpen((prev) => !prev);
     } else {
       onFileSelect(node.path);
     }
@@ -126,37 +126,31 @@ function FileTreeNode({
       )}
     </div>
   );
-}
+});
 
 // File icon mapping with VS Code-like colors and specific icons
-const FILE_ICONS: Record<string, { color: string; icon: string }> = {
-  // TypeScript
+// Using Map with Object.entries for O(1) lookups
+const FILE_ICONS_MAP = new Map<string, { color: string; icon: string }>(Object.entries({
   ts: { color: "text-blue-500", icon: "TS" },
   tsx: { color: "text-blue-400", icon: "TSX" },
-  // JavaScript
   js: { color: "text-yellow-400", icon: "JS" },
   jsx: { color: "text-yellow-300", icon: "JSX" },
   mjs: { color: "text-yellow-400", icon: "JS" },
   cjs: { color: "text-yellow-400", icon: "JS" },
-  // JSON & Config
   json: { color: "text-orange-400", icon: "JSON" },
   yaml: { color: "text-red-400", icon: "YAML" },
   yml: { color: "text-red-400", icon: "YAML" },
   toml: { color: "text-gray-400", icon: "TOML" },
   ini: { color: "text-gray-400", icon: "INI" },
-  // Markdown
   md: { color: "text-blue-300", icon: "MD" },
   mdx: { color: "text-yellow-300", icon: "MDX" },
-  // Styles
   css: { color: "text-blue-400", icon: "CSS" },
   scss: { color: "text-pink-400", icon: "SCSS" },
   sass: { color: "text-pink-400", icon: "SASS" },
   less: { color: "text-blue-300", icon: "LESS" },
   stylus: { color: "text-green-300", icon: "STYL" },
-  // HTML
   html: { color: "text-orange-500", icon: "HTML" },
   htm: { color: "text-orange-500", icon: "HTML" },
-  // Images
   svg: { color: "text-orange-300", icon: "SVG" },
   png: { color: "text-green-400", icon: "IMG" },
   jpg: { color: "text-green-400", icon: "IMG" },
@@ -164,134 +158,88 @@ const FILE_ICONS: Record<string, { color: string; icon: string }> = {
   gif: { color: "text-green-400", icon: "IMG" },
   webp: { color: "text-green-400", icon: "IMG" },
   ico: { color: "text-yellow-300", icon: "ICO" },
-  // Fonts
   ttf: { color: "text-red-300", icon: "FONT" },
   otf: { color: "text-red-300", icon: "FONT" },
   woff: { color: "text-red-300", icon: "FONT" },
   woff2: { color: "text-red-300", icon: "FONT" },
-  // Python
   py: { color: "text-yellow-300", icon: "PY" },
   pyc: { color: "text-gray-400", icon: "PYC" },
-  // Rust
   rs: { color: "text-orange-400", icon: "RS" },
-  // Go
   go: { color: "text-cyan-400", icon: "GO" },
-  // Java
   java: { color: "text-red-500", icon: "JAVA" },
   class: { color: "text-blue-400", icon: "CLASS" },
   jar: { color: "text-red-400", icon: "JAR" },
-  // C/C++
   c: { color: "text-blue-500", icon: "C" },
   cpp: { color: "text-blue-400", icon: "CPP" },
   h: { color: "text-purple-400", icon: "H" },
   hpp: { color: "text-purple-400", icon: "HPP" },
-  // C#
   cs: { color: "text-green-400", icon: "CS" },
-  // PHP
   php: { color: "text-purple-400", icon: "PHP" },
-  // Ruby
   rb: { color: "text-red-500", icon: "RB" },
-  // Shell
   sh: { color: "text-green-300", icon: "SH" },
   bash: { color: "text-green-300", icon: "BASH" },
   zsh: { color: "text-green-300", icon: "ZSH" },
   fish: { color: "text-green-300", icon: "FISH" },
   ps1: { color: "text-blue-400", icon: "PS" },
-  // SQL
   sql: { color: "text-gray-300", icon: "SQL" },
-  // GraphQL
   graphql: { color: "text-pink-400", icon: "GQL" },
   gql: { color: "text-pink-400", icon: "GQL" },
-  // Docker
   dockerfile: { color: "text-blue-500", icon: "DOCKER" },
-  // Git
   gitignore: { color: "text-red-400", icon: "GIT" },
   gitattributes: { color: "text-red-400", icon: "GIT" },
-  // Lock files
   lock: { color: "text-yellow-500", icon: "LOCK" },
-  // Env
   env: { color: "text-yellow-500", icon: "ENV" },
-  // Log
   log: { color: "text-gray-400", icon: "LOG" },
-  // XML
   xml: { color: "text-orange-400", icon: "XML" },
-  // CSV
   csv: { color: "text-green-500", icon: "CSV" },
-  // PDF
   pdf: { color: "text-red-500", icon: "PDF" },
-  // Zip/Archive
   zip: { color: "text-yellow-500", icon: "ZIP" },
   tar: { color: "text-yellow-500", icon: "TAR" },
   gz: { color: "text-yellow-500", icon: "GZ" },
   rar: { color: "text-yellow-500", icon: "RAR" },
   "7z": { color: "text-yellow-500", icon: "7Z" },
-  // Vue
   vue: { color: "text-green-400", icon: "VUE" },
-  // Svelte
   svelte: { color: "text-orange-500", icon: "SVELTE" },
-  // Swift
   swift: { color: "text-orange-400", icon: "SWIFT" },
-  // Kotlin
   kt: { color: "text-purple-400", icon: "KT" },
   kts: { color: "text-purple-400", icon: "KTS" },
-  // Dart
   dart: { color: "text-cyan-400", icon: "DART" },
-  // Flutter
   flutter: { color: "text-cyan-300", icon: "FLUTTER" },
-  // Lua
   lua: { color: "text-blue-500", icon: "LUA" },
-  // Perl
   pl: { color: "text-blue-300", icon: "PL" },
   pm: { color: "text-blue-300", icon: "PM" },
-  // R
   r: { color: "text-blue-400", icon: "R" },
-  // Julia
   jl: { color: "text-purple-500", icon: "JL" },
-  // Haskell
   hs: { color: "text-purple-400", icon: "HS" },
   lhs: { color: "text-purple-400", icon: "LHS" },
-  // Scala
   scala: { color: "text-red-400", icon: "SCALA" },
   sc: { color: "text-red-400", icon: "SC" },
-  // Clojure
   clj: { color: "text-green-400", icon: "CLJ" },
   cljs: { color: "text-green-400", icon: "CLJS" },
-  // Elixir
   ex: { color: "text-purple-400", icon: "EX" },
   exs: { color: "text-purple-400", icon: "EXS" },
-  // Erlang
   erl: { color: "text-red-300", icon: "ERL" },
   hrl: { color: "text-red-300", icon: "HRL" },
-  // OCaml
   ml: { color: "text-orange-400", icon: "ML" },
   mli: { color: "text-yellow-400", icon: "MLI" },
-  // F#
   fs: { color: "text-blue-400", icon: "FS" },
   fsi: { color: "text-blue-400", icon: "FSI" },
   fsx: { color: "text-blue-400", icon: "FSX" },
-  // Nim
   nim: { color: "text-yellow-400", icon: "NIM" },
-  // Zig
   zig: { color: "text-orange-500", icon: "ZIG" },
-  // V
   v: { color: "text-blue-400", icon: "V" },
-  // Crystal
   cr: { color: "text-gray-300", icon: "CR" },
-  // Assembly
   asm: { color: "text-red-400", icon: "ASM" },
   s: { color: "text-red-400", icon: "S" },
-  // Makefile
   mk: { color: "text-yellow-500", icon: "MAKE" },
-  // CMake
   cmake: { color: "text-green-400", icon: "CMAKE" },
-  // Gradle
   gradle: { color: "text-blue-400", icon: "GRADLE" },
-  // Maven
   pom: { color: "text-red-400", icon: "POM" },
-};
+}));
 
 // Special file names (not extensions)
-const SPECIAL_FILES: Record<string, { color: string; icon: string }> = {
+// Using Map with Object.entries for O(1) lookups
+const SPECIAL_FILES_MAP = new Map<string, { color: string; icon: string }>(Object.entries({
   ".gitignore": { color: "text-red-400", icon: "GIT" },
   ".gitattributes": { color: "text-red-400", icon: "GIT" },
   ".gitmodules": { color: "text-red-400", icon: "GIT" },
@@ -357,7 +305,7 @@ const SPECIAL_FILES: Record<string, { color: string; icon: string }> = {
   "robots.txt": { color: "text-gray-400", icon: "ROBOTS" },
   "sitemap.xml": { color: "text-yellow-400", icon: "SITEMAP" },
   "manifest.json": { color: "text-purple-400", icon: "MANIFEST" },
-  " Cargo.toml": { color: "text-orange-400", icon: "CARGO" },
+  "cargo.toml": { color: "text-orange-400", icon: "CARGO" },
   "cargo.lock": { color: "text-orange-400", icon: "CARGO" },
   "go.mod": { color: "text-cyan-400", icon: "GO" },
   "go.sum": { color: "text-cyan-400", icon: "GO" },
@@ -374,15 +322,16 @@ const SPECIAL_FILES: Record<string, { color: string; icon: string }> = {
   "pom.xml": { color: "text-red-400", icon: "MAVEN" },
   "build.gradle": { color: "text-blue-400", icon: "GRADLE" },
   "settings.gradle": { color: "text-blue-400", icon: "GRADLE" },
-};
+}));
 
-function FileIcon({ filename }: { filename: string }) {
+const FileIcon = memo(function FileIcon({ filename }: { filename: string }) {
   const lowerName = filename.toLowerCase();
   const ext = lowerName.split(".").pop() || "";
 
-  // Check special files first
-  if (SPECIAL_FILES[lowerName]) {
-    const { color, icon } = SPECIAL_FILES[lowerName];
+  // Check special files first using Map.get for O(1) lookup
+  const specialFile = SPECIAL_FILES_MAP.get(lowerName);
+  if (specialFile) {
+    const { color, icon } = specialFile;
     return (
       <div className={`w-4 h-4 ${color} font-bold text-[8px] flex items-center justify-center`}>
         {icon.slice(0, 3)}
@@ -390,8 +339,8 @@ function FileIcon({ filename }: { filename: string }) {
     );
   }
 
-  // Check by extension
-  const fileConfig = FILE_ICONS[ext];
+  // Check by extension using Map.get for O(1) lookup
+  const fileConfig = FILE_ICONS_MAP.get(ext);
   if (fileConfig) {
     const { color, icon } = fileConfig;
     return (
@@ -411,4 +360,4 @@ function FileIcon({ filename }: { filename: string }) {
       />
     </svg>
   );
-}
+});

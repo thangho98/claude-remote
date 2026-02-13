@@ -51,20 +51,20 @@ const FILE_ICON_COLORS: Record<string, string> = {
   log: "text-gray-400",
 };
 
-// Simple syntax highlighting patterns
-const TOKEN_PATTERNS = [
+// Pre-compiled syntax highlighting patterns (hoisted to module level)
+const COMPILED_PATTERNS = [
   // Comments
-  { pattern: /(\/\/.*$|\/\*[\s\S]*?\*\/|#.*$)/gm, class: "text-gray-500 italic" },
+  { regex: /(\/\/.*$|\/\*[\s\S]*?\*\/|#.*$)/gm, class: "text-gray-500 italic" },
   // Strings
-  { pattern: /(["'`])(?:\\.|(?!\1)[^\\\r\n])*\1/g, class: "text-green-400" },
+  { regex: /(["'`])(?:\\.|(?!\1)[^\\\r\n])*\1/g, class: "text-green-400" },
   // Numbers
-  { pattern: /\b\d+(?:\.\d+)?\b/g, class: "text-blue-300" },
+  { regex: /\b\d+(?:\.\d+)?\b/g, class: "text-blue-300" },
   // Keywords
-  { pattern: /\b(?:const|let|var|function|return|if|else|for|while|import|export|from|class|interface|type|enum|async|await|try|catch|throw|new|this|true|false|null|undefined)\b/g, class: "text-purple-400" },
+  { regex: /\b(?:const|let|var|function|return|if|else|for|while|import|export|from|class|interface|type|enum|async|await|try|catch|throw|new|this|true|false|null|undefined)\b/g, class: "text-purple-400" },
   // Functions
-  { pattern: /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(?=\()/g, class: "text-yellow-300" },
+  { regex: /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(?=\()/g, class: "text-yellow-300" },
   // Types (capitalized)
-  { pattern: /\b[A-Z][a-zA-Z0-9_$]*\b/g, class: "text-cyan-300" },
+  { regex: /\b[A-Z][a-zA-Z0-9_$]*\b/g, class: "text-cyan-300" },
 ];
 
 function getFileIconColor(ext: string): string {
@@ -75,14 +75,13 @@ function highlightCode(content: string): { lines: string[]; highlighted: (string
   const lines = content.split("\n");
   const highlighted = lines.map((line, lineIndex) => {
     const tokens: (string | JSX.Element)[] = [];
-    let remaining = line;
     let key = 0;
 
     // Simple tokenization - find all matches and build tokens
     const matches: { start: number; end: number; class: string; text: string }[] = [];
 
-    TOKEN_PATTERNS.forEach(({ pattern, class: className }) => {
-      const regex = new RegExp(pattern.source, pattern.flags);
+    COMPILED_PATTERNS.forEach(({ regex, class: className }) => {
+      regex.lastIndex = 0; // Reset stateful regex before each use
       let match;
       while ((match = regex.exec(line)) !== null) {
         matches.push({

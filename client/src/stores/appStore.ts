@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { persist } from 'zustand/middleware';
 import type { Message, Project, FileNode, Session, TokenUsage, SlashCommand } from '@shared/types';
 
@@ -34,7 +35,6 @@ interface AppState {
 
   // UI
   activeTab: 'chat' | 'file' | 'files' | 'terminal';
-  sidebarOpen: boolean;
 
   // Commands
   commands: SlashCommand[];
@@ -83,7 +83,6 @@ interface AppActions {
 
   // UI
   setActiveTab: (tab: 'chat' | 'file' | 'files' | 'terminal') => void;
-  toggleSidebar: () => void;
 
   // Commands
   setCommands: (commands: SlashCommand[]) => void;
@@ -109,7 +108,6 @@ export const useAppStore = create<AppState & AppActions>()(
       currentModel: null,
       tokenUsage: null,
       activeTab: 'chat',
-      sidebarOpen: true,
       commands: [],
 
       // Auth
@@ -143,7 +141,6 @@ export const useAppStore = create<AppState & AppActions>()(
       setMessages: (messages) => set({ messages }),
       addMessage: (message) =>
         set((state) => {
-          // Prevent duplicate messages by checking if ID already exists
           if (state.messages.some((m) => m.id === message.id)) {
             return state;
           }
@@ -154,18 +151,14 @@ export const useAppStore = create<AppState & AppActions>()(
         set((state) => ({
           messages: state.messages.map((m) => {
             if (m.id !== id) return m;
-            // Handle both string and array content
             if (typeof m.content === 'string') {
               return { ...m, content: m.content + content };
             }
-            // Content is array - find existing text block or add new one
             const blocks = [...m.content];
             const lastBlock = blocks[blocks.length - 1];
             if (lastBlock && lastBlock.type === 'text') {
-              // Append to existing text block
               blocks[blocks.length - 1] = { ...lastBlock, text: lastBlock.text + content };
             } else {
-              // Add new text block
               blocks.push({ type: 'text' as const, text: content });
             }
             return { ...m, content: blocks };
@@ -176,12 +169,10 @@ export const useAppStore = create<AppState & AppActions>()(
         set((state) => {
           const index = state.messages.findIndex((m) => m.id === message.id);
           if (index !== -1) {
-            // Replace existing message
             const newMessages = [...state.messages];
             newMessages[index] = message;
             return { messages: newMessages };
           }
-          // Add new message
           return { messages: [...state.messages, message] };
         }),
 
@@ -189,10 +180,8 @@ export const useAppStore = create<AppState & AppActions>()(
         set((state) => ({
           messages: state.messages.map((m) => {
             if (m.id !== id) return m;
-            // Convert string content to array if needed
             const currentContent =
               typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : m.content;
-            // Parse toolInput if it's a string
             let parsedInput: Record<string, unknown> = {};
             if (typeof toolInput === 'string') {
               try {
@@ -203,7 +192,6 @@ export const useAppStore = create<AppState & AppActions>()(
             } else if (toolInput && typeof toolInput === 'object') {
               parsedInput = toolInput as Record<string, unknown>;
             }
-            // Add tool_use block
             return {
               ...m,
               content: [
@@ -218,20 +206,16 @@ export const useAppStore = create<AppState & AppActions>()(
         set((state) => ({
           messages: state.messages.map((m) => {
             if (m.id !== id) return m;
-            // Convert string content to array if needed
             const currentContent =
               typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : [...m.content];
-            // Find existing thinking block or add new one
             const lastBlock = currentContent[currentContent.length - 1];
             if (lastBlock && lastBlock.type === 'thinking') {
-              // Append to existing thinking block
               currentContent[currentContent.length - 1] = {
                 ...lastBlock,
                 thinking: (lastBlock as { type: 'thinking'; thinking: string }).thinking + content,
               };
               return { ...m, content: currentContent };
             } else {
-              // Add new thinking block
               return {
                 ...m,
                 content: [...currentContent, { type: 'thinking' as const, thinking: content }],
@@ -254,7 +238,7 @@ export const useAppStore = create<AppState & AppActions>()(
       // Terminal
       addTerminalOutput: (output) =>
         set((state) => ({
-          terminalOutput: [...state.terminalOutput, output].slice(-500), // Keep last 500 lines
+          terminalOutput: [...state.terminalOutput, output].slice(-500),
         })),
 
       clearTerminal: () => set({ terminalOutput: [] }),
@@ -271,7 +255,6 @@ export const useAppStore = create<AppState & AppActions>()(
 
       // UI
       setActiveTab: (activeTab) => set({ activeTab }),
-      toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 
       // Commands
       setCommands: (commands) => set({ commands }),
@@ -285,3 +268,41 @@ export const useAppStore = create<AppState & AppActions>()(
     },
   ),
 );
+
+// --- Stable selector hooks (prevent unnecessary re-renders) ---
+// Use these instead of destructuring the full store in components
+
+export const useAuthStore = () =>
+  useAppStore(useShallow((s) => ({ token: s.token, setToken: s.setToken, authenticated: s.authenticated, logout: s.logout })));
+
+export const useConnectionStore = () =>
+  useAppStore(useShallow((s) => ({ isConnected: s.isConnected, setConnected: s.setConnected })));
+
+export const useProjectStore = () =>
+  useAppStore(useShallow((s) => ({ projects: s.projects, currentProject: s.currentProject, setCurrentProject: s.setCurrentProject })));
+
+export const useFileStore = () =>
+  useAppStore(useShallow((s) => ({ fileTree: s.fileTree, selectedFile: s.selectedFile, setSelectedFile: s.setSelectedFile })));
+
+export const useMessageStore = () =>
+  useAppStore(useShallow((s) => ({ messages: s.messages, addMessage: s.addMessage, clearMessages: s.clearMessages })));
+
+export const useLoadingStore = () =>
+  useAppStore(useShallow((s) => ({ isLoading: s.isLoading, setLoading: s.setLoading, isThinking: s.isThinking })));
+
+export const useTerminalStore = () =>
+  useAppStore(useShallow((s) => ({ terminalOutput: s.terminalOutput, clearTerminal: s.clearTerminal })));
+
+export const useSessionStore = () =>
+  useAppStore(useShallow((s) => ({
+    sessions: s.sessions,
+    currentSession: s.currentSession,
+    setCurrentSession: s.setCurrentSession,
+    currentModel: s.currentModel,
+    setCurrentModel: s.setCurrentModel,
+    tokenUsage: s.tokenUsage,
+    setTokenUsage: s.setTokenUsage,
+  })));
+
+export const useUIStore = () =>
+  useAppStore(useShallow((s) => ({ activeTab: s.activeTab, setActiveTab: s.setActiveTab, commands: s.commands })));

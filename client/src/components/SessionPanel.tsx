@@ -1,42 +1,14 @@
-import type { Session, TokenUsage } from "@shared/types";
+import { formatRelativeTime, truncatePrompt } from "../utils/format";
+import type { Session } from "@shared/types";
 
 interface SessionPanelProps {
   sessions: Session[];
   currentSession: Session | null;
-  currentModel: string | null;
-  tokenUsage: TokenUsage | null;
   onSessionSelect: (sessionId: string) => void;
   onNewSession: () => void;
 }
 
-function truncatePrompt(prompt: string, maxLength = 40): string {
-  if (!prompt) return "New session";
-  if (prompt.length <= maxLength) return prompt;
-  return prompt.slice(0, maxLength) + "...";
-}
-
-function formatRelativeTime(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSecs = Math.floor(diffMs / 1000);
-  const diffMins = Math.floor(diffSecs / 60);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffSecs < 60) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
-}
-
-export function SessionPanel({
-  sessions,
-  currentSession,
-  onSessionSelect,
-  onNewSession,
-}: SessionPanelProps) {
+export function SessionPanel({ sessions, currentSession, onSessionSelect, onNewSession }: SessionPanelProps) {
   return (
     <div className="px-3 py-2 bg-gray-900">
       <div className="flex items-center gap-2">
