@@ -11,7 +11,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 5555,
     host: true, // Listen on all interfaces (0.0.0.0) for Tailscale/LAN access
     proxy: {
       "/api": {

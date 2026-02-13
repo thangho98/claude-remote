@@ -78,13 +78,6 @@ export function Layout({
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Model display */}
-          {currentModel && (
-            <span className="text-xs px-2 py-1 bg-orange-900/50 text-orange-300 rounded-sm hidden sm:inline">
-              {currentModel}
-            </span>
-          )}
-
           {/* Connection status */}
           <div className="flex items-center gap-2">
             {isReconnecting ? (

@@ -14,7 +14,7 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "login", description: "Switch account or auth method", source: "builtin" },
   { name: "logout", description: "Sign out", source: "builtin" },
   { name: "memory", description: "Edit CLAUDE.md memory files", source: "builtin" },
-  { name: "model", description: "Switch AI model", source: "builtin" },
+  { name: "model", description: "Show or switch AI model", source: "builtin" },
   { name: "permissions", description: "Manage tool permissions", source: "builtin" },
   { name: "review", description: "Code review current changes", source: "builtin" },
   { name: "status", description: "Show current session info", source: "builtin" },

@@ -40,7 +40,8 @@ export interface Project {
   id: string;
   name: string;
   path: string;
-  lastAccessed?: string;
+  lastModified?: string;
+  sessionCount?: number;
 }
 
 // Content block types for Claude messages

@@ -42,6 +42,12 @@ export class ClaudeCliProvider implements ClaudeProvider {
         '--dangerously-skip-permissions',
       ];
 
+      // Add model flag if specified
+      const model = options.model || process.env.CLAUDE_MODEL;
+      if (model) {
+        cmdArgs.push('--model', model);
+      }
+
       handlers.onThinking?.(true);
 
       if (sessionId) {

@@ -31,10 +31,8 @@ export class ClaudeSdkProvider implements ClaudeProvider {
       // Query options with cwd and session support
       const queryOptions: Record<string, unknown> = {
         cwd: workingDirectory,
-        // Default model - uses Claude Sonnet 4.5
-        // Available models: claude-opus-4, claude-sonnet-4-5, claude-haiku-4
-        // Format: {model-name}-{version}-{date}
-        // model: 'claude-sonnet-4-5-20250929',
+        // Use model from options or default
+        model: options.model || process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20251022',
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
       };

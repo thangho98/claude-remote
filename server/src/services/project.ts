@@ -41,23 +41,36 @@ export async function listProjects(): Promise<Project[]> {
         const stats = await stat(projectPath);
         if (!stats.isDirectory()) continue;
 
-        // Get last modified from sessions or folder mtime
-        let lastAccessed: string;
-        if (indexData.entries && indexData.entries.length > 0) {
-          // Find the most recent session
-          const sortedEntries = indexData.entries
-            .filter((e) => e.modified)
-            .sort((a, b) => new Date(b.modified!).getTime() - new Date(a.modified!).getTime());
-          lastAccessed = sortedEntries[0]?.modified || stats.mtime.toISOString();
-        } else {
-          lastAccessed = stats.mtime.toISOString();
+        // Get all files in project folder and find the latest modified
+        let latestModified = new Date(0);
+        try {
+          const projectFiles = await readdir(claudeFolderPath);
+          for (const file of projectFiles) {
+            if (file.startsWith(".")) continue;
+            const filePath = join(claudeFolderPath, file);
+            try {
+              const fileStats = await stat(filePath);
+              if (fileStats.mtime > latestModified) {
+                latestModified = fileStats.mtime;
+              }
+            } catch {
+              // Skip files we can't stat
+            }
+          }
+        } catch {
+          // Fallback to folder mtime if readdir fails
+        }
+
+        // If no files found or readdir failed, use folder mtime
+        if (latestModified.getTime() === 0) {
+          latestModified = stats.mtime;
         }
 
         projects.push({
           id: Buffer.from(projectPath).toString("base64"),
           name: basename(projectPath),
           path: projectPath,
-          lastAccessed,
+          lastModified: latestModified.toISOString(),
         });
       } catch {
         // Skip if sessions-index.json doesn't exist or is invalid
@@ -67,10 +80,10 @@ export async function listProjects(): Promise<Project[]> {
     // Claude projects directory doesn't exist
   }
 
-  // Sort by last accessed (most recent first)
+  // Sort by last modified (most recent first)
   projects.sort((a, b) => {
-    if (!a.lastAccessed || !b.lastAccessed) return 0;
-    return new Date(b.lastAccessed).getTime() - new Date(a.lastAccessed).getTime();
+    if (!a.lastModified || !b.lastModified) return 0;
+    return new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime();
   });
 
   return projects;

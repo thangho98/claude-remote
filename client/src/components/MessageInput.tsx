@@ -399,10 +399,6 @@ export function MessageInput({
 
           <div className="flex-1" />
 
-          {modelName && (
-            <span className="text-orange-400 font-medium">{modelName}</span>
-          )}
-
           {tokenUsage && (
             <span className="flex items-center gap-1.5 text-gray-400">
               <ContextPieChart

@@ -50,8 +50,8 @@ bun run dev
 
 4. **Open in browser**
 
-- Desktop: http://localhost:5173
-- Mobile: Use your local IP (e.g., http://192.168.1.x:5173)
+- Desktop: http://localhost:5555
+- Mobile: Use your local IP (e.g. http://192.168.1.x:5555)
 
 5. **Enter your token** and start chatting!
 
@@ -60,7 +60,7 @@ bun run dev
 For secure remote access:
 
 1. Install [Tailscale](https://tailscale.com) on your server and devices
-2. Access via Tailscale IP: `http://100.x.x.x:5173`
+2. Access via Tailscale IP: `http://100.x.x.x:5555`
 
 ## Project Structure
 

@@ -20,6 +20,7 @@ export interface ClaudeQueryOptions {
   prompt: string;
   workingDirectory: string;
   sessionId?: string | null;
+  model?: string;
   handlers: ClaudeMessageHandler;
 }
 
