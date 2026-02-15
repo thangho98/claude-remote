@@ -2,7 +2,7 @@
   "meta": {
     "schema_version": "1.1.0",
     "awf_version": "3.3.0",
-    "last_updated": "2026-02-13T18:00:00+07:00"
+    "last_updated": "2026-02-14T01:00:00+07:00"
   },
   "project": {
     "name": "claude-remote",
@@ -277,10 +277,24 @@
         ]
       },
       {
-        "name": "Zustand Store",
-        "description": "Simple state management without boilerplate",
+        "name": "Zustand Store with useShallow",
+        "description": "State management with co-located selector hooks using useShallow to prevent infinite re-renders from object reference comparison",
         "files": [
           "client/src/stores/appStore.ts"
+        ]
+      },
+      {
+        "name": "Event Handler Refs (useWebSocket)",
+        "description": "Store WebSocket callbacks in refs to avoid stale closures and prevent useCallback recreation on parent re-renders",
+        "files": [
+          "client/src/hooks/useWebSocket.ts"
+        ]
+      },
+      {
+        "name": "Shared Utilities",
+        "description": "Extracted shared formatRelativeTime() and truncatePrompt() from ChatPanel and SessionPanel",
+        "files": [
+          "client/src/utils/format.ts"
         ]
       }
     ],
@@ -415,6 +429,31 @@
         "issue": "Folders expanded by default causing clutter",
         "solution": "Changed isOpen default from depth < 2 to false",
         "file": "client/src/components/FileExplorer.tsx"
+      },
+      {
+        "issue": "Zustand selectors returning object literals cause infinite re-render loop",
+        "solution": "Wrap all co-located selector hooks with useShallow from zustand/react/shallow",
+        "file": "client/src/stores/appStore.ts"
+      },
+      {
+        "issue": "SessionModal flickering during message streaming",
+        "solution": "Wrap SessionModal with React.memo, stabilize onClose/onSessionSelect callbacks with useCallback",
+        "files": ["client/src/components/ChatPanel.tsx", "client/src/App.tsx"]
+      },
+      {
+        "issue": "useEffect with object dependency causes client→server infinite loop",
+        "solution": "Use primitive dependency (currentProject?.path string) instead of object (currentProject) in useEffect",
+        "file": "client/src/App.tsx"
+      },
+      {
+        "issue": "FileExplorer Map constructor uses invalid key:value syntax",
+        "solution": "Use new Map(Object.entries({...})) pattern instead of new Map([key, value] pairs)",
+        "file": "client/src/components/FileExplorer.tsx"
+      },
+      {
+        "issue": "MessageInput memo() call never closed",
+        "solution": "Changed closing } to }); to properly close the memo() wrapper",
+        "file": "client/src/components/MessageInput.tsx"
       }
     ],
     "conventions": [
@@ -429,6 +468,22 @@
       {
         "rule": "Slash commands discovered from .claude/commands/ and .claude/skills/",
         "reason": "Compatible with Claude Code CLI conventions"
+      },
+      {
+        "rule": "Zustand selectors must use useShallow when returning objects",
+        "reason": "Prevents infinite re-render from Object.is reference comparison"
+      },
+      {
+        "rule": "WebSocket callbacks stored in refs (advanced-event-handler-refs pattern)",
+        "reason": "Avoids stale closures and unnecessary useCallback recreation"
+      },
+      {
+        "rule": "useEffect dependencies must be primitives, not objects",
+        "reason": "Server responses create new object references that trigger effect loops"
+      },
+      {
+        "rule": "Hoist RegExp to module level for functions called repeatedly",
+        "reason": "Avoids RegExp creation on every call (js-hoist-regexp pattern)"
       }
     ]
   },
@@ -461,8 +516,9 @@
       "components/FileExplorer.tsx": "VS Code-style file tree with icons",
       "components/FileViewer.tsx": "VS Code-style file viewer with syntax highlighting, zoom",
       "components/TerminalOutput.tsx": "Terminal output panel",
-      "hooks/useWebSocket.ts": "WebSocket hook with auto-reconnect",
-      "stores/appStore.ts": "Zustand state store"
+      "hooks/useWebSocket.ts": "WebSocket hook with auto-reconnect, ref-based callbacks",
+      "stores/appStore.ts": "Zustand state store with co-located useShallow selector hooks",
+      "utils/format.ts": "Shared utilities: formatRelativeTime(), truncatePrompt()"
     },
     "shared/": {
       "types.ts": "Shared types for WebSocket events and domain models"

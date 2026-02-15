@@ -8,6 +8,7 @@ import { isGitRepo, getGitStatus, getGitChanges, getGitDiff } from './services/g
 import { getClaudeProvider } from './claude/providers';
 import { getOrCreateSession } from './claude/session';
 import { subscribeToRoom, unsubscribeAll, getSubscribedRooms } from './rooms';
+import { createTerminal, writeToTerminal, resizeTerminal, closeTerminal, closeAllTerminals, closeTerminalsByDirectory } from './services/terminal';
 
 // Track all active WebSocket connections
 const activeConnections = new Set<ServerWebSocket<WSData>>();
@@ -51,6 +52,7 @@ export function createWebSocketHandlers() {
     close(ws: ServerWebSocket<WSData>) {
       const rooms = getSubscribedRooms(ws);
       console.log('🔌 WebSocket client disconnected', rooms);
+      closeAllTerminals(ws);
       unsubscribeAll(ws);
       activeConnections.delete(ws);
     },
@@ -71,6 +73,10 @@ async function handleEvent(ws: ServerWebSocket<WSData>, event: WSClientEvent) {
       break;
 
     case 'project:switch':
+      // Clean up terminals from previous project
+      if (ws.data.workingDirectory && ws.data.workingDirectory !== event.path) {
+        closeTerminalsByDirectory(ws, ws.data.workingDirectory);
+      }
       ws.data.workingDirectory = event.path;
       console.log(`📁 Switched to project: ${event.path}`);
 
@@ -143,6 +149,22 @@ async function handleEvent(ws: ServerWebSocket<WSData>, event: WSClientEvent) {
 
     case 'git:diff':
       await handleGitDiffEvent(ws, event.path, event.staged);
+      break;
+
+    case 'terminal:create':
+      handleTerminalCreate(ws, event.id, event.cols, event.rows);
+      break;
+
+    case 'terminal:input':
+      handleTerminalInput(ws, event.id, event.data);
+      break;
+
+    case 'terminal:resize':
+      handleTerminalResize(event.id, event.cols, event.rows);
+      break;
+
+    case 'terminal:close':
+      handleTerminalClose(ws, event.id);
       break;
 
     default:
@@ -374,6 +396,42 @@ async function handleGitDiffEvent(ws: ServerWebSocket<WSData>, path: string, sta
     console.error(`Failed to get diff for ${path}:`, error);
     send(ws, { type: 'git:error', error: `Failed to get diff for ${path}` });
   }
+}
+
+function handleTerminalCreate(ws: ServerWebSocket<WSData>, id?: string, cols?: number, rows?: number) {
+  if (!ws.data.workingDirectory) {
+    send(ws, { type: 'terminal:error', id: id || '', error: 'No project selected' });
+    return;
+  }
+
+  const terminalId = id || crypto.randomUUID();
+  try {
+    const session = createTerminal(ws, terminalId, ws.data.workingDirectory, cols, rows);
+    send(ws, { type: 'terminal:created', session });
+    console.log(`🖥️ Terminal created: ${terminalId} in ${ws.data.workingDirectory}`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Failed to create terminal';
+    send(ws, { type: 'terminal:error', id: terminalId, error: msg });
+    console.error(`❌ Failed to create terminal:`, error);
+  }
+}
+
+function handleTerminalInput(ws: ServerWebSocket<WSData>, id: string, data: string) {
+  try {
+    writeToTerminal(id, data);
+  } catch (error) {
+    send(ws, { type: 'terminal:error', id, error: 'Terminal not found' });
+  }
+}
+
+function handleTerminalResize(id: string, cols: number, rows: number) {
+  resizeTerminal(id, cols, rows);
+}
+
+function handleTerminalClose(ws: ServerWebSocket<WSData>, id: string) {
+  closeTerminal(id);
+  send(ws, { type: 'terminal:closed', id });
+  console.log(`🖥️ Terminal closed: ${id}`);
 }
 
 function send(ws: ServerWebSocket<WSData>, event: WSServerEvent) {

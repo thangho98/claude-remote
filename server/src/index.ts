@@ -1,8 +1,9 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { validateToken } from "./middleware/auth";
-import { createWebSocketHandlers, type WSData, getConnectionStats } from "./websocket";
+import { createWebSocketHandlers, type WSData, getConnectionStats, getConnections } from "./websocket";
 import { listProjects } from "./services/project";
+import { closeAllTerminals } from "./services/terminal";
 
 const PORT = process.env.PORT || 3001;
 
@@ -50,6 +51,10 @@ let server: ReturnType<typeof Bun.serve<WSData>> | null = null;
 // Graceful shutdown handler
 function gracefulShutdown(signal: string) {
   console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
+  // Kill all PTY processes before closing connections
+  for (const ws of getConnections()) {
+    closeAllTerminals(ws);
+  }
   if (server) {
     server.stop(true); // true = close existing connections
     server = null;

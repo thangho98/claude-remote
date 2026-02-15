@@ -1,6 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import type { MutableRefObject } from 'react';
 import { v7 as uuidv7 } from 'uuid';
 import { useWebSocket } from './hooks/useWebSocket';
+import { useIsDesktop } from './hooks/useIsDesktop';
 import {
   useAppStore,
   useAuthStore,
@@ -9,18 +11,19 @@ import {
   useFileStore,
   useMessageStore,
   useLoadingStore,
-  useTerminalStore,
+  useTerminalSessionStore,
   useSessionStore,
   useUIStore,
   useGitStore,
   useBottomPanelStore,
 } from './stores/appStore';
+import { writeTerminalData } from './lib/terminalRegistry';
 import { AuthScreen } from './components/AuthScreen';
 import { Layout } from './components/Layout';
 import { ChatPanel } from './components/ChatPanel';
 import { FileExplorer } from './components/FileExplorer';
 import { FileViewer } from './components/FileViewer';
-import { TerminalOutput } from './components/TerminalOutput';
+import { TerminalPanel } from './components/TerminalPanel';
 import { SessionPanel } from './components/SessionPanel';
 import type { WSServerEvent, Message, Session } from '@shared/types';
 
@@ -41,185 +44,207 @@ function App() {
   const { fileTree, selectedFile, setSelectedFile } = useFileStore();
   const { messages, addMessage, clearMessages } = useMessageStore();
   const { isLoading, setLoading, isThinking } = useLoadingStore();
-  const { terminalOutput, clearTerminal } = useTerminalStore();
   const { sessions, currentSession, setCurrentSession, setCurrentModel, tokenUsage, setTokenUsage } = useSessionStore();
   const { activeTab, setActiveTab, commands } = useUIStore();
   const { gitStatus, gitChanges, selectedDiff, setSelectedDiff } = useGitStore();
   const { bottomPanelTab, setBottomPanelTab } = useBottomPanelStore();
+  const { terminalSessions, activeTerminalId, setActiveTerminalId } = useTerminalSessionStore();
+  const isDesktop = useIsDesktop();
 
   // Handle incoming WebSocket messages
-  const handleMessage = useCallback(
-    (event: WSServerEvent) => {
-      // Use getState() directly for fresh state - no stale closures
-      const store = useAppStore.getState();
-      const currentMessages = store.messages;
+  // Note: Using ref pattern to avoid stale closures - handlerRef is updated on every render
+  const handlerRef = useRef<(event: WSServerEvent) => void>(() => {}) as MutableRefObject<(event: WSServerEvent) => void>;
+  
+  const handleMessage = useCallback((event: WSServerEvent) => {
+    // Always call the latest handler from ref
+    handlerRef.current(event);
+  }, []);
+  
+  // Update the actual handler implementation on every render
+  handlerRef.current = (event: WSServerEvent) => {
+    // Use getState() directly for fresh state - no stale closures
+    const store = useAppStore.getState();
+    const currentMessages = store.messages;
 
-      switch (event.type) {
-        case 'auth:success':
-          store.setAuthenticated(true);
-          setAuthError(null);
-          setIsConnecting(false);
-          break;
+    switch (event.type) {
+      case 'auth:success':
+        store.setAuthenticated(true);
+        setAuthError(null);
+        setIsConnecting(false);
+        break;
 
-        case 'auth:error':
-          setAuthError(event.message);
-          store.setAuthenticated(false);
-          setIsConnecting(false);
-          break;
+      case 'auth:error':
+        setAuthError(event.message);
+        store.setAuthenticated(false);
+        setIsConnecting(false);
+        break;
 
-        case 'project:list':
-          store.setProjects(event.projects);
-          break;
+      case 'project:list':
+        store.setProjects(event.projects);
+        break;
 
-        case 'project:current':
-          store.setCurrentProject(event.project);
-          break;
+      case 'project:current':
+        store.setCurrentProject(event.project);
+        break;
 
-        case 'file:tree':
-          store.setFileTree(event.tree);
-          break;
+      case 'file:tree':
+        store.setFileTree(event.tree);
+        break;
 
-        case 'file:content':
-          store.setSelectedFile({ path: event.path, content: event.content });
-          break;
+      case 'file:content':
+        store.setSelectedFile({ path: event.path, content: event.content });
+        break;
 
-        case 'message:append':
-          store.upsertMessage(event.message);
-          break;
+      case 'message:append':
+        store.upsertMessage(event.message);
+        break;
 
-        case 'message:chunk': {
-          const existingMsg = currentMessages.find((m) => m.id === event.id);
-          if (!existingMsg) {
-            store.addMessage({
-              id: event.id,
-              role: 'assistant',
-              content: event.content,
-              timestamp: new Date().toISOString(),
-              isStreaming: true,
-            });
-          } else {
-            store.updateMessage(event.id, event.content);
-          }
-          break;
-        }
-
-        case 'message:tool_use': {
-          let parsedInput: Record<string, unknown> = {};
-          if (typeof event.toolInput === 'string' && event.toolInput) {
-            try {
-              parsedInput = JSON.parse(event.toolInput);
-            } catch {
-              parsedInput = { raw: event.toolInput };
-            }
-          }
-
-          const existingMsg = currentMessages.find((m) => m.id === event.id);
-          if (!existingMsg) {
-            store.addMessage({
-              id: event.id,
-              role: 'assistant',
-              content: [
-                {
-                  type: 'tool_use',
-                  id: `${event.id}-${event.toolName}`,
-                  name: event.toolName,
-                  input: parsedInput,
-                },
-              ],
-              timestamp: new Date().toISOString(),
-              isStreaming: true,
-            });
-          } else {
-            store.addToolUseToMessage(event.id, event.toolName, event.toolInput);
-          }
-          break;
-        }
-
-        case 'message:done':
-          store.setMessageDone(event.id);
-          store.setLoading(false);
-          store.setThinking(false);
-          break;
-
-        case 'message:error':
-          store.setLoading(false);
-          store.setThinking(false);
+      case 'message:chunk': {
+        const existingMsg = currentMessages.find((m) => m.id === event.id);
+        if (!existingMsg) {
           store.addMessage({
-            id: event.id || uuidv7(),
+            id: event.id,
             role: 'assistant',
-            content: `Error: ${event.error}`,
+            content: event.content,
             timestamp: new Date().toISOString(),
+            isStreaming: true,
           });
-          break;
+        } else {
+          store.updateMessage(event.id, event.content);
+        }
+        break;
+      }
 
-        case 'message:thinking':
-          store.setThinking(event.isThinking);
-          break;
-
-        case 'message:thinking_content': {
-          const existingMsg = currentMessages.find((m) => m.id === event.id);
-          if (!existingMsg) {
-            store.addMessage({
-              id: event.id,
-              role: 'assistant',
-              content: [{ type: 'thinking', thinking: event.content }],
-              timestamp: new Date().toISOString(),
-              isStreaming: true,
-            });
-          } else {
-            store.addThinkingToMessage(event.id, event.content);
+      case 'message:tool_use': {
+        let parsedInput: Record<string, unknown> = {};
+        if (typeof event.toolInput === 'string' && event.toolInput) {
+          try {
+            parsedInput = JSON.parse(event.toolInput);
+          } catch {
+            parsedInput = { raw: event.toolInput };
           }
-          break;
         }
 
-        case 'terminal:output':
-          store.addTerminalOutput(event.content);
-          break;
-
-        case 'session:list':
-          store.setSessions(event.sessions);
-          break;
-
-        case 'session:current':
-          store.setCurrentSession(event.session);
-          break;
-
-        case 'session:info':
-          store.setCurrentModel(event.model);
-          store.setTokenUsage(event.usage);
-          break;
-
-        case 'session:messages':
-          store.setMessages(event.messages);
-          break;
-
-        case 'session:id':
-          console.log(`📋 New session ID: ${event.sessionId}`);
-          break;
-
-        case 'commands:list':
-          store.setCommands(event.commands);
-          break;
-
-        case 'git:status':
-          store.setGitStatus(event.status);
-          break;
-
-        case 'git:changes':
-          store.setGitChanges(event.changes);
-          break;
-
-        case 'git:diff':
-          store.setSelectedDiff(event.diff);
-          break;
-
-        case 'git:error':
-          console.error('Git error:', event.error);
-          break;
+        const existingMsg = currentMessages.find((m) => m.id === event.id);
+        if (!existingMsg) {
+          store.addMessage({
+            id: event.id,
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: `${event.id}-${event.toolName}`,
+                name: event.toolName,
+                input: parsedInput,
+              },
+            ],
+            timestamp: new Date().toISOString(),
+            isStreaming: true,
+          });
+        } else {
+          store.addToolUseToMessage(event.id, event.toolName, event.toolInput);
+        }
+        break;
       }
-    },
-    [],
-  );
+
+      case 'message:done':
+        store.setMessageDone(event.id);
+        store.setLoading(false);
+        store.setThinking(false);
+        break;
+
+      case 'message:error':
+        store.setLoading(false);
+        store.setThinking(false);
+        store.addMessage({
+          id: event.id || uuidv7(),
+          role: 'assistant',
+          content: `Error: ${event.error}`,
+          timestamp: new Date().toISOString(),
+        });
+        break;
+
+      case 'message:thinking':
+        store.setThinking(event.isThinking);
+        break;
+
+      case 'message:thinking_content': {
+        const existingMsg = currentMessages.find((m) => m.id === event.id);
+        if (!existingMsg) {
+          store.addMessage({
+            id: event.id,
+            role: 'assistant',
+            content: [{ type: 'thinking', thinking: event.content }],
+            timestamp: new Date().toISOString(),
+            isStreaming: true,
+          });
+        } else {
+          store.addThinkingToMessage(event.id, event.content);
+        }
+        break;
+      }
+
+      case 'terminal:output':
+        store.addTerminalOutput(event.content);
+        break;
+
+      case 'session:list':
+        store.setSessions(event.sessions);
+        break;
+
+      case 'session:current':
+        store.setCurrentSession(event.session);
+        break;
+
+      case 'session:info':
+        store.setCurrentModel(event.model);
+        store.setTokenUsage(event.usage);
+        break;
+
+      case 'session:messages':
+        store.setMessages(event.messages);
+        break;
+
+      case 'session:id':
+        console.log(`📋 New session ID: ${event.sessionId}`);
+        break;
+
+      case 'commands:list':
+        store.setCommands(event.commands);
+        break;
+
+      case 'git:status':
+        store.setGitStatus(event.status);
+        break;
+
+      case 'git:changes':
+        store.setGitChanges(event.changes);
+        break;
+
+      case 'git:diff':
+        store.setSelectedDiff(event.diff);
+        break;
+
+      case 'git:error':
+        console.error('Git error:', event.error);
+        break;
+
+      case 'terminal:created':
+        store.addTerminalSession(event.session);
+        break;
+
+      case 'terminal:data':
+        writeTerminalData(event.id, event.data);
+        break;
+
+      case 'terminal:closed':
+        store.removeTerminalSession(event.id);
+        break;
+
+      case 'terminal:error':
+        break;
+    }
+  };
 
   const {
     error: wsError,
@@ -337,6 +362,33 @@ function App() {
   const handleGitDiffSelect = useCallback((path: string) => {
     send({ type: 'git:diff', path });
   }, [send]);
+
+  // Refs for stable callbacks
+  const sendRef = useRef(send);
+  useEffect(() => {
+    sendRef.current = send;
+  }, [send]);
+
+  // Terminal callbacks - use refs to avoid stale closures
+  const handleCreateTerminal = useCallback(() => {
+    // Default dimensions based on device type to prevent prompt wrapping issues (cursor jumping)
+    // Mobile width (375px) typically fits ~40 cols with standard font size
+    const cols = isDesktop ? 80 : 40; 
+    const rows = isDesktop ? 24 : 20;
+    sendRef.current({ type: 'terminal:create', id: crypto.randomUUID(), cols, rows });
+  }, [isDesktop]);
+
+  const handleCloseTerminal = useCallback((id: string) => {
+    sendRef.current({ type: 'terminal:close', id });
+  }, []);
+
+  const handleTerminalInput = useCallback((id: string, base64Data: string) => {
+    sendRef.current({ type: 'terminal:input', id, data: base64Data });
+  }, []);
+
+  const handleTerminalResize = useCallback((id: string, cols: number, rows: number) => {
+    sendRef.current({ type: 'terminal:resize', id, cols, rows });
+  }, []);
 
   // Auto-connect if we have a stored token
   useEffect(() => {
@@ -473,11 +525,22 @@ function App() {
                 )}
               </button>
             </div>
-            {/* Panel content */}
-            <div className="flex-1 overflow-hidden">
-              {bottomPanelTab === 'terminal' ? (
-                <TerminalOutput output={terminalOutput} onClear={clearTerminal} hideHeader />
-              ) : (
+            {/* Panel content - TerminalPanel always mounted to keep ref alive for streaming data */}
+            <div className="flex-1 overflow-hidden relative">
+              <div className="absolute inset-0" style={{ display: bottomPanelTab === 'terminal' ? 'block' : 'none' }}>
+                {isDesktop && (
+                  <TerminalPanel
+                    terminalSessions={terminalSessions}
+                    activeTerminalId={activeTerminalId}
+                    onSetActiveTerminal={setActiveTerminalId}
+                    onCreateTerminal={handleCreateTerminal}
+                    onCloseTerminal={handleCloseTerminal}
+                    onTerminalInput={handleTerminalInput}
+                    onTerminalResize={handleTerminalResize}
+                  />
+                )}
+              </div>
+              {bottomPanelTab === 'git' && (
                 <Suspense fallback={<div className="h-full flex items-center justify-center text-gray-500 text-sm">Loading...</div>}>
                   <SourceControlPanel
                     gitStatus={gitStatus}
@@ -570,7 +633,20 @@ function App() {
             <FileExplorer tree={fileTree} onFileSelect={handleFileSelect} selectedPath={selectedFile?.path} />
           </div>
         )}
-        {activeTab === 'terminal' && <TerminalOutput output={terminalOutput} onClear={clearTerminal} />}
+        {/* Terminal always mounted on mobile for data streaming */}
+        <div className="h-full" style={{ display: activeTab === 'terminal' ? 'block' : 'none' }}>
+          {!isDesktop && (
+            <TerminalPanel
+              terminalSessions={terminalSessions}
+              activeTerminalId={activeTerminalId}
+              onSetActiveTerminal={setActiveTerminalId}
+              onCreateTerminal={handleCreateTerminal}
+              onCloseTerminal={handleCloseTerminal}
+              onTerminalInput={handleTerminalInput}
+              onTerminalResize={handleTerminalResize}
+            />
+          )}
+        </div>
         {activeTab === 'git' && (
           <Suspense fallback={<div className="h-full flex items-center justify-center text-gray-500 text-sm">Loading...</div>}>
             <div className="h-full flex flex-col">

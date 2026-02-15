@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { persist } from 'zustand/middleware';
-import type { Message, Project, FileNode, Session, TokenUsage, SlashCommand, GitStatusInfo, GitChange, GitDiffResult } from '@shared/types';
+import type { Message, Project, FileNode, Session, TokenUsage, SlashCommand, GitStatusInfo, GitChange, GitDiffResult, TerminalSession } from '@shared/types';
 
 interface AppState {
   // Auth
@@ -26,6 +26,8 @@ interface AppState {
 
   // Terminal
   terminalOutput: string[];
+  terminalSessions: TerminalSession[];
+  activeTerminalId: string | null;
 
   // Sessions
   sessions: Session[];
@@ -76,6 +78,10 @@ interface AppActions {
   // Terminal
   addTerminalOutput: (output: string) => void;
   clearTerminal: () => void;
+  addTerminalSession: (session: TerminalSession) => void;
+  removeTerminalSession: (id: string) => void;
+  setActiveTerminalId: (id: string | null) => void;
+  clearTerminalSessions: () => void;
 
   // Loading
   setLoading: (loading: boolean) => void;
@@ -115,6 +121,8 @@ export const useAppStore = create<AppState & AppActions>()(
       fileTree: null,
       selectedFile: null,
       terminalOutput: [],
+      terminalSessions: [],
+      activeTerminalId: null,
       sessions: [],
       currentSession: null,
       currentModel: null,
@@ -154,6 +162,8 @@ export const useAppStore = create<AppState & AppActions>()(
           gitStatus: null,
           gitChanges: [],
           selectedDiff: null,
+          terminalSessions: [],
+          activeTerminalId: null,
         }),
 
       // Messages
@@ -262,6 +272,28 @@ export const useAppStore = create<AppState & AppActions>()(
 
       clearTerminal: () => set({ terminalOutput: [] }),
 
+      addTerminalSession: (session) =>
+        set((state) => ({
+          terminalSessions: [...state.terminalSessions, session],
+          activeTerminalId: session.id,
+        })),
+
+      removeTerminalSession: (id) =>
+        set((state) => {
+          const remaining = state.terminalSessions.filter((s) => s.id !== id);
+          return {
+            terminalSessions: remaining,
+            activeTerminalId:
+              state.activeTerminalId === id
+                ? remaining[remaining.length - 1]?.id ?? null
+                : state.activeTerminalId,
+          };
+        }),
+
+      setActiveTerminalId: (activeTerminalId) => set({ activeTerminalId }),
+
+      clearTerminalSessions: () => set({ terminalSessions: [], activeTerminalId: null }),
+
       // Loading
       setLoading: (isLoading) => set({ isLoading }),
       setThinking: (isThinking) => set({ isThinking }),
@@ -317,6 +349,15 @@ export const useLoadingStore = () =>
 
 export const useTerminalStore = () =>
   useAppStore(useShallow((s) => ({ terminalOutput: s.terminalOutput, clearTerminal: s.clearTerminal })));
+
+export const useTerminalSessionStore = () =>
+  useAppStore(useShallow((s) => ({
+    terminalSessions: s.terminalSessions,
+    activeTerminalId: s.activeTerminalId,
+    addTerminalSession: s.addTerminalSession,
+    removeTerminalSession: s.removeTerminalSession,
+    setActiveTerminalId: s.setActiveTerminalId,
+  })));
 
 export const useSessionStore = () =>
   useAppStore(useShallow((s) => ({

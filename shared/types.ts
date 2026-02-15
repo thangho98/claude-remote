@@ -11,7 +11,11 @@ export type WSClientEvent =
   | { type: 'session:resume'; sessionId: string }
   | { type: 'commands:list' }
   | { type: 'git:status' }
-  | { type: 'git:diff'; path: string; staged?: boolean };
+  | { type: 'git:diff'; path: string; staged?: boolean }
+  | { type: 'terminal:create'; id?: string; cols?: number; rows?: number }
+  | { type: 'terminal:input'; id: string; data: string }
+  | { type: 'terminal:resize'; id: string; cols: number; rows: number }
+  | { type: 'terminal:close'; id: string };
 
 // WebSocket Events: Server → Client
 export type WSServerEvent =
@@ -39,7 +43,11 @@ export type WSServerEvent =
   | { type: 'git:status'; status: GitStatusInfo }
   | { type: 'git:changes'; changes: GitChange[] }
   | { type: 'git:diff'; diff: GitDiffResult }
-  | { type: 'git:error'; error: string };
+  | { type: 'git:error'; error: string }
+  | { type: 'terminal:created'; session: TerminalSession }
+  | { type: 'terminal:data'; id: string; data: string }
+  | { type: 'terminal:closed'; id: string; exitCode?: number }
+  | { type: 'terminal:error'; id: string; error: string };
 
 // Domain Types
 export interface Project {
@@ -140,6 +148,16 @@ export interface SlashCommand {
   name: string;
   description: string;
   source: 'builtin' | 'project' | 'user';
+}
+
+// --- Terminal Types ---
+
+export interface TerminalSession {
+  id: string;
+  name: string;
+  shellPath: string;
+  cwd: string;
+  createdAt: string;
 }
 
 // --- Git Types ---
