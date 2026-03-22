@@ -29,7 +29,7 @@ const FileViewer = lazy(() =>
 );
 import { TerminalPanel } from './components/TerminalPanel';
 import { SessionPanel } from './components/SessionPanel';
-import type { WSServerEvent, Message, Session } from '@shared/types';
+import type { ChatProvider, ProviderInterface, ProviderSettingsSummary, WSServerEvent, Message, Session } from '@shared/types';
 import { ToolPermissionModal } from './components/ToolPermissionModal';
 import type { ToolPermissionRequest } from './components/ToolPermissionModal';
 
@@ -209,7 +209,7 @@ function App() {
             snippet = text.length > 120 ? text.slice(0, 120) + '...' : text;
           }
         }
-        notifyRef.current('Claude finished', snippet);
+        notifyRef.current('Assistant finished', snippet);
         break;
       }
 
@@ -225,7 +225,7 @@ function App() {
             timestamp: new Date().toISOString(),
           });
         }
-        notifyRef.current('Claude error', event.error ?? 'An error occurred');
+        notifyRef.current('Assistant error', event.error ?? 'An error occurred');
         break;
       }
 
@@ -294,9 +294,18 @@ function App() {
 
       case 'session:id': {
         console.log(`📋 New session ID: ${event.sessionId}`);
+        const pendingMessages = store.messagesBySession.pending || [];
+        if (pendingMessages.length > 0) {
+          store.setMessagesForSession(event.sessionId, pendingMessages.map((message) => ({
+            ...message,
+            sessionId: event.sessionId,
+          })));
+          store.clearMessagesForSession('pending');
+        }
         // Create a new session object and set it as current
         const newSession: Session = {
           id: event.sessionId,
+          provider: store.settings?.provider || 'claude',
           title: 'New session',
           firstPrompt: '',
           messageCount: 0,
@@ -366,6 +375,13 @@ function App() {
 
       case 'profiles:list':
         store.setProfiles((event as any).profiles || []);
+        if (!event.profiles?.length) {
+          store.setCurrentProfile(null);
+          break;
+        }
+        if (!store.currentProfile || !event.profiles.some((profile) => profile.path === store.currentProfile?.path)) {
+          store.setCurrentProfile(event.profiles[0]);
+        }
         break;
 
       case 'browse:list': {
@@ -377,8 +393,80 @@ function App() {
 
       case 'settings:info': {
         const e = event as any;
+        const isValidProvider = e.provider === 'claude' || e.provider === 'codex';
+        const isValidInterface = e.interface === 'sdk' || e.interface === 'cli';
+        if (!isValidProvider || !isValidInterface) {
+          console.warn('Invalid settings:info payload shape', {
+            provider: e.provider,
+            interface: e.interface,
+            providers: e.providers,
+          });
+        }
+
+        const normalizedProvider: ChatProvider = e.provider === 'codex' ? 'codex' : 'claude';
+        const normalizedInterface: ProviderInterface = e.interface === 'cli' ? 'cli' : 'sdk';
+        const providerDefaults = {
+          claude: {
+            label: 'Claude',
+            interfaces: [
+              { value: 'sdk', label: 'Claude SDK', available: true },
+              { value: 'cli', label: 'Claude CLI', available: true },
+            ],
+          },
+          codex: {
+            label: 'Codex',
+            interfaces: [
+              { value: 'sdk', label: 'Codex SDK', available: true },
+              { value: 'cli', label: 'Codex CLI', available: true },
+            ],
+          },
+        } satisfies Record<ChatProvider, { label: string; interfaces: ProviderSettingsSummary['interfaces'] }>;
+
+        const rawProviders = Array.isArray(e.providers) ? e.providers : [];
+        const normalizedProviders: ProviderSettingsSummary[] = (['claude', 'codex'] as ChatProvider[]).map((provider) => {
+          const rawProvider = rawProviders.find((entry: any) => (entry?.provider === 'codex' ? 'codex' : 'claude') === provider) as
+            | Partial<ProviderSettingsSummary>
+            | undefined;
+          const isActive = provider === normalizedProvider;
+
+          return {
+            provider,
+            label: rawProvider?.label || providerDefaults[provider].label,
+            active: isActive,
+            available: rawProvider?.available ?? true,
+            interface: rawProvider?.interface === 'cli'
+              ? 'cli'
+              : isActive
+                ? normalizedInterface
+                : 'sdk',
+            interfaces: Array.isArray(rawProvider?.interfaces) && rawProvider.interfaces.length > 0
+              ? rawProvider.interfaces
+              : providerDefaults[provider].interfaces,
+            permissionMode: rawProvider?.permissionMode || (isActive ? e.permissionMode : 'unknown'),
+            model: rawProvider?.model || (isActive ? (e.model || 'default') : 'default'),
+            models: Array.isArray(rawProvider?.models) && rawProvider.models.length > 0
+              ? rawProvider.models
+              : isActive
+                ? (e.models || [])
+                : [],
+            mcpServers: Array.isArray(rawProvider?.mcpServers) && rawProvider.mcpServers.length > 0
+              ? rawProvider.mcpServers
+              : isActive
+                ? (e.mcpServers || [])
+                : [],
+            claudeConfig: rawProvider?.claudeConfig || (isActive ? (e.claudeConfig || {}) : {}),
+            tokenUsage: rawProvider?.tokenUsage || (isActive ? (e.tokenUsage || null) : null),
+            costInfo: rawProvider?.costInfo || (isActive ? (e.costInfo || null) : null),
+            rateLimits: rawProvider?.rateLimits || (isActive ? (e.rateLimits || {}) : {}),
+            accountInfo: rawProvider?.accountInfo || (isActive ? (e.accountInfo || null) : null),
+            reasoningLevel: rawProvider?.reasoningLevel ?? null,
+            usageQuota: rawProvider?.usageQuota || (isActive ? (e.usageQuota || null) : null),
+          };
+        });
         store.setSettings({
-          provider: e.provider,
+          provider: normalizedProvider,
+          interface: normalizedInterface,
+          providers: normalizedProviders,
           permissionMode: e.permissionMode,
           model: e.model,
           models: e.models || [],
@@ -454,24 +542,25 @@ function App() {
   }, [setCurrentProject, send]);
 
   // Handle session selection
-  const handleSessionSelect = useCallback((sessionId: string) => {
-    send({ type: 'session:switch', sessionId });
+  const handleSessionSelect = useCallback((session: Session) => {
+    send({ type: 'session:switch', sessionId: session.id });
   }, [send]);
 
   // Stable callback for mobile session modal (avoids recreating on every render)
   const handleSessionSelectFromSession = useCallback(
-    (session: Session) => handleSessionSelect(session.id),
+    (session: Session) => handleSessionSelect(session),
     [handleSessionSelect],
   );
 
   // Handle new session
-  const handleNewSession = useCallback(() => {
+  const handleNewSession = useCallback((provider?: ChatProvider) => {
     setCurrentSession(null);
     setCurrentModel(null);
     setTokenUsage(null);
+    setCurrentProfile(null);
     clearAllMessages();
-    send({ type: 'session:new' });
-  }, [setCurrentSession, setCurrentModel, setTokenUsage, clearAllMessages, send]);
+    send({ type: 'session:new', provider });
+  }, [setCurrentSession, setCurrentModel, setTokenUsage, setCurrentProfile, clearAllMessages, send]);
 
   // Handle file save
   const handleFileSave = useCallback((path: string, content: string) => {
@@ -533,19 +622,59 @@ function App() {
   }, [send]);
 
   // Selected model (local state, persists across renders)
-  const [selectedModel, setSelectedModel] = useState<string | undefined>();
+  const [selectedModels, setSelectedModels] = useState<Partial<Record<ChatProvider, string>>>({});
+
+  // Handle runtime settings changes
+  const handlePermissionChange = useCallback((mode: string) => {
+    const provider = useAppStore.getState().settings?.provider || 'claude';
+    send({ type: 'permission:set', provider, mode } as any);
+  }, [send]);
+
+  const handleEffortChange = useCallback((level: string) => {
+    send({ type: 'effort:set', level } as any);
+  }, [send]);
+
+  const handleReasoningChange = useCallback((level: string) => {
+    send({ type: 'reasoning:set', level } as any);
+  }, [send]);
+
+  const handleSpeedChange = useCallback((level: string) => {
+    send({ type: 'speed:set', level } as any);
+  }, [send]);
 
   // Handle model change
   const handleModelChange = useCallback((model: string) => {
-    setSelectedModel(model);
+    const provider = useAppStore.getState().settings?.provider || 'claude';
+    setSelectedModels((prev) => ({ ...prev, [provider]: model }));
     send({ type: 'model:set', model } as any);
+    send({ type: 'settings:get' });
   }, [send]);
 
   // Handle profile change
   const handleProfileChange = useCallback((profile: import('@shared/types').SettingsProfile) => {
     setCurrentProfile(profile);
     send({ type: 'profile:set', profilePath: profile.path } as any);
+    send({ type: 'settings:get' });
   }, [send, setCurrentProfile]);
+
+  const handleProviderChange = useCallback((provider: ChatProvider) => {
+    useAppStore.getState().setCurrentSession(null);
+    useAppStore.getState().setCurrentModel(null);
+    useAppStore.getState().setTokenUsage(null);
+    useAppStore.getState().setCurrentProfile(null);
+    useAppStore.getState().setSessions([]);
+    send({ type: 'provider:set', provider });
+  }, [send]);
+
+  const handleInterfaceChange = useCallback((provider: ChatProvider, interfaceType: ProviderInterface) => {
+    if (useAppStore.getState().settings?.provider === provider) {
+      useAppStore.getState().setCurrentSession(null);
+      useAppStore.getState().setCurrentModel(null);
+      useAppStore.getState().setTokenUsage(null);
+      useAppStore.getState().setCurrentProfile(null);
+    }
+    send({ type: 'interface:set', provider, interface: interfaceType });
+  }, [send]);
 
   // Folder browser state
   const [browseEntries, setBrowseEntries] = useState<import('@shared/types').BrowseEntry[]>([]);
@@ -634,6 +763,7 @@ function App() {
     if (authenticated && isConnected) {
       send({ type: 'commands:list' });
       send({ type: 'profiles:list' });
+      send({ type: 'settings:get' });
       // Reconnect any existing terminals from previous session
       send({ type: 'terminal:reconnect' });
 
@@ -804,11 +934,16 @@ function App() {
               tokenUsage={tokenUsage}
               commands={commands}
               models={models}
-              currentModel={selectedModel || settings?.model}
+              currentModel={selectedModels[settings?.provider || 'claude'] || settings?.model}
               onModelChange={handleModelChange}
               profiles={profiles}
               currentProfile={currentProfile}
               onProfileChange={handleProfileChange}
+              activeProvider={settings?.provider}
+              onPermissionChange={handlePermissionChange}
+              onEffortChange={handleEffortChange}
+              onReasoningChange={handleReasoningChange}
+              onSpeedChange={handleSpeedChange}
             />
           </div>
         </div>
@@ -826,11 +961,16 @@ function App() {
             tokenUsage={tokenUsage}
             commands={commands}
             models={models}
-            currentModel={selectedModel || settings?.model}
+            currentModel={selectedModels[settings?.provider || 'claude'] || settings?.model}
             onModelChange={handleModelChange}
             profiles={profiles}
             currentProfile={currentProfile}
             onProfileChange={handleProfileChange}
+            activeProvider={settings?.provider}
+            onPermissionChange={handlePermissionChange}
+            onEffortChange={handleEffortChange}
+            onReasoningChange={handleReasoningChange}
+            onSpeedChange={handleSpeedChange}
             // Session selector in mobile chat
             showSessionSelector
             sessions={sessions}
@@ -915,7 +1055,12 @@ function App() {
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           <Suspense fallback={<div className="flex items-center justify-center h-32" style={{ color: 'var(--text-muted)' }}>Loading...</div>}>
-            <SettingsPanel settings={settings} onLogout={handleLogout} />
+            <SettingsPanel
+              settings={settings}
+              onProviderChange={handleProviderChange}
+              onInterfaceChange={handleInterfaceChange}
+              onLogout={handleLogout}
+            />
           </Suspense>
         </div>
       </div>

@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { validateToken } from "./middleware/auth";
 import { createWebSocketHandlers, type WSData, getConnectionStats, getConnections } from "./websocket";
+import { getDefaultProviderSelection } from "./claude/providers";
 import { listProjects } from "./services/project";
 import { closeAllTerminals } from "./services/terminal";
 
@@ -92,6 +93,7 @@ async function startServer(retries = 3): Promise<void> {
 
         fetch(req, bunServer) {
           const url = new URL(req.url);
+          const defaultSelection = getDefaultProviderSelection();
 
           // WebSocket upgrade
           if (url.pathname === "/ws") {
@@ -106,6 +108,17 @@ async function startServer(retries = 3): Promise<void> {
                 authenticated: true,
                 workingDirectory: process.env.DEFAULT_PROJECT_DIR || null, // Set when project is selected
                 currentSessionId: null,
+                selectedProvider: defaultSelection.provider,
+                selectedInterfaces: {
+                  claude: defaultSelection.provider === "claude" ? defaultSelection.interface : "sdk",
+                  codex: defaultSelection.provider === "codex" ? defaultSelection.interface : "sdk",
+                },
+                selectedModels: {},
+                settingsProfiles: {},
+                permissionModes: {},
+                effortLevel: 'max',
+                reasoningLevel: 'xhigh',
+                speedLevel: 'standard',
               },
             });
 
@@ -120,7 +133,7 @@ async function startServer(retries = 3): Promise<void> {
         websocket: wsHandlers,
       });
 
-      console.log(`🚀 Server running on http://localhost:${server.port}`);
+      console.log(`🚀 Server running on http://localhost:${server.port} (pid: ${process.pid})`);
       console.log(`🔌 WebSocket available at ws://localhost:${server.port}/ws`);
       return;
     } catch (error) {

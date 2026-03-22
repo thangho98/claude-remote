@@ -8,6 +8,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.77",
     "@elysiajs/cors": "^1.1.0",
+    "@openai/codex-sdk": "^0.116.0",
     "elysia": "^1.2.0"
   },
   "devDependencies": {

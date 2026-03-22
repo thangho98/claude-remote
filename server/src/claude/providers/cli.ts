@@ -8,7 +8,9 @@ import type { ClaudeProvider, ClaudeQueryOptions, ClaudeMessageHandler } from '.
  * Uses the installed Claude CLI with print mode and stream-json output
  */
 export class ClaudeCliProvider implements ClaudeProvider {
-  readonly name = 'cli';
+  readonly name = 'claude-cli';
+  readonly provider = 'claude' as const;
+  readonly interface = 'cli' as const;
 
   async isAvailable(): Promise<boolean> {
     try {

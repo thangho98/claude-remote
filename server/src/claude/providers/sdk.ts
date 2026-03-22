@@ -13,7 +13,9 @@ interface ActiveSession {
  * Supports multiple concurrent sessions, each with its own query instance.
  */
 export class ClaudeSdkProvider implements ClaudeProvider {
-  readonly name = 'sdk';
+  readonly name = 'claude-sdk';
+  readonly provider = 'claude' as const;
+  readonly interface = 'sdk' as const;
 
   // Per-session active queries (sessionId → ActiveSession)
   private activeSessions = new Map<string, ActiveSession>();
@@ -132,6 +134,11 @@ export class ClaudeSdkProvider implements ClaudeProvider {
         abortController,
         settingSources: ['project', 'user', 'local'],
       };
+
+      // Wire effort level (maps to SDK's maxThinkingTokens / thinking budget)
+      if (options.effortLevel) {
+        queryOptions.effortLevel = options.effortLevel;
+      }
 
       // Apply settings profile if specified
       if (options.settingsProfile) {

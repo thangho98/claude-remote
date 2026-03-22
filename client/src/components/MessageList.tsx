@@ -495,6 +495,7 @@ const CommandDisplay = memo(function CommandDisplay({ command, name }: { command
 // Copy Button Component - memoized
 const CopyButton = memo(function CopyButton({ text, className = '' }: { text: string; className?: string }) {
   const [copied, setCopied] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   const handleCopy = useCallback(
     async (e: React.MouseEvent) => {
@@ -531,9 +532,19 @@ const CopyButton = memo(function CopyButton({ text, className = '' }: { text: st
   return (
     <button
       onClick={handleCopy}
-      className={`p-1.5 rounded hover:bg-black/30 transition-all ${
-        copied ? 'text-green-300' : 'text-white/70 hover:text-white'
-      } ${className}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsHovered(true)}
+      onBlur={() => setIsHovered(false)}
+      className={`p-1.5 rounded transition-all ${className}`}
+      style={{
+        color: copied ? 'var(--success)' : isHovered ? 'var(--text-primary)' : 'var(--text-muted)',
+        backgroundColor: copied
+          ? 'color-mix(in srgb, var(--success) 12%, transparent)'
+          : isHovered
+            ? 'var(--bg-tertiary)'
+            : 'transparent',
+      }}
       title="Copy message"
     >
       {copied ? (
@@ -808,7 +819,7 @@ export function MessageList({ messages }: MessageListProps) {
               d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
             />
           </svg>
-          <p>Start a conversation with Claude</p>
+          <p>Start a conversation</p>
         </div>
       </div>
     );

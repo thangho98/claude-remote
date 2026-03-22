@@ -1,91 +1,148 @@
-import type { ClaudeProvider, ClaudeProviderType } from "../types";
-import { ClaudeCliProvider } from "./cli";
-import { ClaudeSdkProvider } from "./sdk";
+import type {
+  ClaudeProvider,
+  ChatProviderType,
+  ProviderInterfaceType,
+  ProviderSelection,
+} from '../types';
+import { ClaudeCliProvider } from './cli';
+import { CodexCliProvider } from './codex';
+import { CodexSdkProvider } from './codexSdk';
+import { ClaudeSdkProvider } from './sdk';
 
 // Singleton instances
-let cliProvider: ClaudeCliProvider | null = null;
-let sdkProvider: ClaudeSdkProvider | null = null;
-let currentProvider: ClaudeProvider | null = null;
+let claudeCliProvider: ClaudeCliProvider | null = null;
+let claudeSdkProvider: ClaudeSdkProvider | null = null;
+let codexCliProvider: CodexCliProvider | null = null;
+let codexSdkProvider: CodexSdkProvider | null = null;
 
-/**
- * Get or create a provider instance
- */
-function getProviderInstance(type: ClaudeProviderType): ClaudeProvider {
-  switch (type) {
-    case "cli":
-      if (!cliProvider) {
-        cliProvider = new ClaudeCliProvider();
-      }
-      return cliProvider;
-    case "sdk":
-      if (!sdkProvider) {
-        sdkProvider = new ClaudeSdkProvider();
-      }
-      return sdkProvider;
-    default:
-      throw new Error(`Unknown provider type: ${type}`);
-  }
+export const PROVIDER_LABELS: Record<ChatProviderType, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+};
+
+export const INTERFACE_LABELS: Record<ProviderInterfaceType, string> = {
+  sdk: 'SDK',
+  cli: 'CLI',
+};
+
+export const PROVIDER_INTERFACE_LABELS: Record<ChatProviderType, Record<ProviderInterfaceType, string>> = {
+  claude: {
+    sdk: 'Claude SDK',
+    cli: 'Claude CLI',
+  },
+  codex: {
+    sdk: 'Codex SDK',
+    cli: 'Codex CLI',
+  },
+};
+
+function isProvider(value: string | undefined | null): value is ChatProviderType {
+  return value === 'claude' || value === 'codex';
+}
+
+function isInterface(value: string | undefined | null): value is ProviderInterfaceType {
+  return value === 'sdk' || value === 'cli';
 }
 
 /**
- * Get the current active provider
- * Falls back to CLI if SDK is not available
+ * Support both the new env model:
+ *   AI_PROVIDER=claude|codex
+ *   AI_INTERFACE=sdk|cli
+ * and the old shorthand:
+ *   AI_PROVIDER=sdk|cli|codex
  */
-export async function getClaudeProvider(): Promise<ClaudeProvider> {
-  if (currentProvider) {
-    return currentProvider;
+export function getDefaultProviderSelection(): ProviderSelection {
+  const envProvider = process.env.AI_PROVIDER || process.env.CLAUDE_PROVIDER;
+  const envInterface = process.env.AI_INTERFACE || process.env.ASSISTANT_INTERFACE;
+
+  if (envProvider === 'sdk' || envProvider === 'cli') {
+    return {
+      provider: 'claude',
+      interface: envProvider,
+    };
   }
 
-  // Check environment variable for preferred provider
-  const preferredType = (process.env.CLAUDE_PROVIDER as ClaudeProviderType) || "sdk";
-
-  const provider = getProviderInstance(preferredType);
-  const isAvailable = await provider.isAvailable();
-
-  if (isAvailable) {
-    currentProvider = provider;
-    console.log(`✅ Using Claude ${provider.name.toUpperCase()} provider`);
-    return provider;
+  if (envProvider === 'codex') {
+    return {
+      provider: 'codex',
+      interface: isInterface(envInterface) ? envInterface : 'cli',
+    };
   }
 
-  // Fallback to CLI if SDK not available
-  if (preferredType === "sdk") {
-    console.warn("⚠️ SDK provider not available, falling back to CLI");
-    const fallback = getProviderInstance("cli");
-    const fallbackAvailable = await fallback.isAvailable();
+  return {
+    provider: isProvider(envProvider) ? envProvider : 'claude',
+    interface: isInterface(envInterface) ? envInterface : 'sdk',
+  };
+}
 
-    if (fallbackAvailable) {
-      currentProvider = fallback;
-      console.log(`✅ Using Claude ${fallback.name.toUpperCase()} provider (fallback)`);
-      return fallback;
+/**
+ * Get or create a provider instance.
+ */
+function getProviderInstance(selection: ProviderSelection): ClaudeProvider {
+  if (selection.provider === 'claude' && selection.interface === 'sdk') {
+    if (!claudeSdkProvider) {
+      claudeSdkProvider = new ClaudeSdkProvider();
     }
+    return claudeSdkProvider;
   }
 
-  throw new Error("No Claude provider available. Install Claude CLI or Claude Agent SDK.");
+  if (selection.provider === 'claude' && selection.interface === 'cli') {
+    if (!claudeCliProvider) {
+      claudeCliProvider = new ClaudeCliProvider();
+    }
+    return claudeCliProvider;
+  }
+
+  if (selection.provider === 'codex' && selection.interface === 'sdk') {
+    if (!codexSdkProvider) {
+      codexSdkProvider = new CodexSdkProvider();
+    }
+    return codexSdkProvider;
+  }
+
+  if (!codexCliProvider) {
+    codexCliProvider = new CodexCliProvider();
+  }
+  return codexCliProvider;
 }
 
-/**
- * Switch to a specific provider
- */
-export async function setClaudeProvider(type: ClaudeProviderType): Promise<ClaudeProvider> {
-  const provider = getProviderInstance(type);
+export async function getClaudeProvider(selection: ProviderSelection): Promise<ClaudeProvider> {
+  const provider = getProviderInstance(selection);
   const isAvailable = await provider.isAvailable();
 
   if (!isAvailable) {
-    throw new Error(`Provider ${type} is not available`);
+    throw new Error(`${PROVIDER_INTERFACE_LABELS[selection.provider][selection.interface]} is not available.`);
   }
 
-  currentProvider = provider;
-  console.log(`🔄 Switched to Claude ${provider.name.toUpperCase()} provider`);
+  console.log(`✅ Using ${PROVIDER_INTERFACE_LABELS[selection.provider][selection.interface]} provider`);
   return provider;
 }
 
-/**
- * Get the current provider type
- */
-export function getCurrentProviderType(): ClaudeProviderType | null {
-  return currentProvider?.name as ClaudeProviderType | null;
+export async function ensureProviderAvailable(selection: ProviderSelection): Promise<void> {
+  await getClaudeProvider(selection);
 }
 
-export { ClaudeCliProvider } from "./cli";
-export { ClaudeSdkProvider } from "./sdk";
+export async function getProviderAvailability(): Promise<Record<ChatProviderType, Record<ProviderInterfaceType, boolean>>> {
+  const [claudeSdk, claudeCli, codexSdk, codexCli] = await Promise.all([
+    getProviderInstance({ provider: 'claude', interface: 'sdk' }).isAvailable(),
+    getProviderInstance({ provider: 'claude', interface: 'cli' }).isAvailable(),
+    getProviderInstance({ provider: 'codex', interface: 'sdk' }).isAvailable(),
+    getProviderInstance({ provider: 'codex', interface: 'cli' }).isAvailable(),
+  ]);
+
+  return {
+    claude: {
+      sdk: claudeSdk,
+      cli: claudeCli,
+    },
+    codex: {
+      sdk: codexSdk,
+      cli: codexCli,
+    },
+  };
+}
+
+export { ClaudeCliProvider } from './cli';
+export { CodexCliProvider } from './codex';
+export { CodexSdkProvider } from './codexSdk';
+export { ClaudeSdkProvider } from './sdk';

@@ -1,7 +1,15 @@
 /**
- * Claude Provider Interface
- * Defines the contract for different Claude implementations (CLI, SDK)
+ * Chat provider interface
+ * Defines the contract for supported agent backends (Claude/Codex via SDK/CLI)
  */
+
+export type ChatProviderType = 'claude' | 'codex';
+export type ProviderInterfaceType = 'sdk' | 'cli';
+
+export interface ProviderSelection {
+  provider: ChatProviderType;
+  interface: ProviderInterfaceType;
+}
 
 export interface ClaudeMessageHandler {
   onChunk: (content: string) => void;
@@ -27,6 +35,9 @@ export interface ClaudeQueryOptions {
   sessionId?: string | null;
   model?: string;
   settingsProfile?: string; // Path to settings file (e.g. ~/.claude/settings/alibaba.json)
+  effortLevel?: string; // Claude: low | medium | high | max
+  reasoningLevel?: string; // Codex: low | medium | high | xhigh
+  speedLevel?: string; // Codex: standard | fast
   handlers: ClaudeMessageHandler;
 }
 
@@ -35,6 +46,8 @@ export interface ClaudeProvider {
    * Provider name for logging/debugging
    */
   readonly name: string;
+  readonly provider: ChatProviderType;
+  readonly interface: ProviderInterfaceType;
 
   /**
    * Send a message to Claude and stream the response
@@ -46,5 +59,3 @@ export interface ClaudeProvider {
    */
   isAvailable(): Promise<boolean>;
 }
-
-export type ClaudeProviderType = 'cli' | 'sdk';

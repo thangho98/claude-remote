@@ -57,6 +57,7 @@ export interface ClaudeGlobalConfig {
     hasExtraUsageEnabled?: boolean;
   };
   mcpServers?: Record<string, MCPServer>;
+  projects?: Record<string, ClaudeJsonProject>;
   githubRepoPaths?: Record<string, string[]>;
   skillUsage?: Record<string, { usageCount: number; lastUsedAt: number }>;
 }

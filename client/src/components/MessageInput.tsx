@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import type { TokenUsage, SlashCommand, SettingsProfile } from "@shared/types";
+import type { ChatProvider, TokenUsage, SlashCommand, SettingsProfile } from "@shared/types";
 
 interface ModelInfo {
   value: string;
@@ -20,10 +20,18 @@ interface MessageInputProps {
   profiles?: SettingsProfile[];
   currentProfile?: SettingsProfile | null;
   onProfileChange?: (profile: SettingsProfile) => void;
+  activeProvider?: ChatProvider;
+  onPermissionChange?: (mode: string) => void;
+  onEffortChange?: (level: string) => void;
+  onReasoningChange?: (level: string) => void;
+  onSpeedChange?: (level: string) => void;
 }
 
 type PermissionMode = "ask" | "auto" | "plan" | "bypass";
 type EffortLevel = "low" | "medium" | "high" | "max";
+type ReasoningLevel = "low" | "medium" | "high" | "xhigh";
+type SpeedLevel = "standard" | "fast";
+
 const EFFORT_LEVELS: { id: EffortLevel; label: string }[] = [
   { id: "low", label: "Low" },
   { id: "medium", label: "Medium" },
@@ -31,12 +39,32 @@ const EFFORT_LEVELS: { id: EffortLevel; label: string }[] = [
   { id: "max", label: "Max" },
 ];
 
-const MODES: { id: PermissionMode; label: string; icon: string; desc: string }[] = [
-  { id: "ask", label: "Ask before edits", icon: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z", desc: "Claude will ask for approval before making each edit" },
-  { id: "auto", label: "Edit automatically", icon: "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4", desc: "Claude will edit your selected text or the whole file" },
-  { id: "plan", label: "Plan mode", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2", desc: "Claude will explore the code and present a plan before editing" },
-  { id: "bypass", label: "Bypass permissions", icon: "M13 10V3L4 14h7v7l9-11h-7z", desc: "Claude will not ask for approval before running potentially dangerous commands" },
+const REASONING_LEVELS: { id: ReasoningLevel; label: string }[] = [
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+  { id: "xhigh", label: "Extra High" },
 ];
+
+const SPEED_LEVELS: { id: SpeedLevel; label: string }[] = [
+  { id: "standard", label: "Standard" },
+  { id: "fast", label: "Fast" },
+];
+
+interface ModeEntry { id: PermissionMode; label: string; icon: string; desc: string }
+
+const CLAUDE_MODES: ModeEntry[] = [
+  { id: "ask", label: "Ask before edits", icon: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z", desc: "The assistant will ask for approval before making each edit" },
+  { id: "auto", label: "Edit automatically", icon: "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4", desc: "The assistant will edit your selected text or the whole file" },
+  { id: "plan", label: "Plan mode", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2", desc: "The assistant will explore the code and present a plan before editing" },
+  { id: "bypass", label: "Bypass permissions", icon: "M13 10V3L4 14h7v7l9-11h-7z", desc: "The assistant will not ask for approval before running potentially dangerous commands" },
+];
+
+const CODEX_MODES: ModeEntry[] = [
+  { id: "auto", label: "Auto", icon: "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4", desc: "Codex will execute tasks automatically" },
+  { id: "plan", label: "Plan mode", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2", desc: "Codex will present a plan before making changes" },
+];
+
 
 function formatTokens(count: number): string {
   if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
@@ -98,10 +126,17 @@ interface ModesListProps {
   onSelect: (id: PermissionMode) => void;
   effortLevel: EffortLevel;
   onEffortChange: (level: EffortLevel) => void;
+  reasoningLevel: ReasoningLevel;
+  onReasoningChange: (level: ReasoningLevel) => void;
+  speedLevel: SpeedLevel;
+  onSpeedChange: (level: SpeedLevel) => void;
   showShortcut: boolean;
+  provider: ChatProvider;
 }
 
-function ModesList({ permissionMode, onSelect, effortLevel, onEffortChange, showShortcut }: ModesListProps) {
+function ModesList({ permissionMode, onSelect, effortLevel, onEffortChange, reasoningLevel, onReasoningChange, speedLevel, onSpeedChange, showShortcut, provider }: ModesListProps) {
+  const modes = provider === 'codex' ? CODEX_MODES : CLAUDE_MODES;
+
   return (
     <>
       <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid var(--border-primary)' }}>
@@ -115,7 +150,7 @@ function ModesList({ permissionMode, onSelect, effortLevel, onEffortChange, show
           </span>
         )}
       </div>
-      {MODES.map((mode) => (
+      {modes.map((mode) => (
         <button key={mode.id}
           onClick={() => onSelect(mode.id)}
           className="w-full px-4 py-3 flex items-start gap-3 text-left transition-colors active:scale-[0.98]"
@@ -137,30 +172,86 @@ function ModesList({ permissionMode, onSelect, effortLevel, onEffortChange, show
         </button>
       ))}
 
-      {/* Effort Level */}
-      <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border-primary)' }}>
-        <div className="flex items-center gap-3 mb-2.5">
-          <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-            style={{ color: 'var(--text-muted)' }}>
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728M9.172 15.828a4 4 0 010-5.656m5.656 0a4 4 0 010 5.656M12 12h.008v.008H12V12z" />
-          </svg>
-          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Effort</span>
+      {/* Claude: Effort Level */}
+      {provider === 'claude' && (
+        <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border-primary)' }}>
+          <div className="flex items-center gap-3 mb-2.5">
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              style={{ color: 'var(--text-muted)' }}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728M9.172 15.828a4 4 0 010-5.656m5.656 0a4 4 0 010 5.656M12 12h.008v.008H12V12z" />
+            </svg>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Effort</span>
+          </div>
+          <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border-primary)' }}>
+            {EFFORT_LEVELS.map((level) => (
+              <button key={level.id}
+                onClick={(e) => { e.stopPropagation(); onEffortChange(level.id); }}
+                className="flex-1 py-2 text-xs font-medium transition-all active:scale-95"
+                style={{
+                  background: effortLevel === level.id ? 'var(--accent)' : 'transparent',
+                  color: effortLevel === level.id ? 'white' : 'var(--text-muted)',
+                }}>
+                {level.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border-primary)' }}>
-          {EFFORT_LEVELS.map((level) => (
-            <button key={level.id}
-              onClick={(e) => { e.stopPropagation(); onEffortChange(level.id); }}
-              className="flex-1 py-2 text-xs font-medium transition-all active:scale-95"
-              style={{
-                background: effortLevel === level.id ? 'var(--accent)' : 'transparent',
-                color: effortLevel === level.id ? 'white' : 'var(--text-muted)',
-              }}>
-              {level.label}
-            </button>
-          ))}
+      )}
+
+      {/* Codex: Reasoning Level */}
+      {provider === 'codex' && (
+        <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border-primary)' }}>
+          <div className="flex items-center gap-3 mb-2.5">
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              style={{ color: 'var(--text-muted)' }}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Reasoning</span>
+          </div>
+          <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border-primary)' }}>
+            {REASONING_LEVELS.map((level) => (
+              <button key={level.id}
+                onClick={(e) => { e.stopPropagation(); onReasoningChange(level.id); }}
+                className="flex-1 py-2 text-xs font-medium transition-all active:scale-95"
+                style={{
+                  background: reasoningLevel === level.id ? 'var(--accent)' : 'transparent',
+                  color: reasoningLevel === level.id ? 'white' : 'var(--text-muted)',
+                }}>
+                {level.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Codex: Speed */}
+      {provider === 'codex' && (
+        <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border-primary)' }}>
+          <div className="flex items-center gap-3 mb-2.5">
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              style={{ color: 'var(--text-muted)' }}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Speed</span>
+          </div>
+          <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border-primary)' }}>
+            {SPEED_LEVELS.map((level) => (
+              <button key={level.id}
+                onClick={(e) => { e.stopPropagation(); onSpeedChange(level.id); }}
+                className="flex-1 py-2 text-xs font-medium transition-all active:scale-95"
+                style={{
+                  background: speedLevel === level.id ? 'var(--accent)' : 'transparent',
+                  color: speedLevel === level.id ? 'white' : 'var(--text-muted)',
+                }}>
+                {level.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -178,6 +269,11 @@ export function MessageInput({
   profiles = [],
   currentProfile,
   onProfileChange,
+  activeProvider = 'claude',
+  onPermissionChange,
+  onEffortChange: onEffortChangeProp,
+  onReasoningChange: onReasoningChangeProp,
+  onSpeedChange: onSpeedChangeProp,
 }: MessageInputProps) {
   const [hasContent, setHasContent] = useState(false);
   const [showCommands, setShowCommands] = useState(false);
@@ -185,6 +281,28 @@ export function MessageInput({
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>("bypass");
   const [effortLevel, setEffortLevel] = useState<EffortLevel>("max");
+  const [reasoningLevel, setReasoningLevel] = useState<ReasoningLevel>("xhigh");
+  const [speedLevel, setSpeedLevel] = useState<SpeedLevel>("standard");
+
+  const handlePermissionChange = useCallback((mode: PermissionMode) => {
+    setPermissionMode(mode);
+    onPermissionChange?.(mode);
+  }, [onPermissionChange]);
+
+  const handleEffortChange = useCallback((level: EffortLevel) => {
+    setEffortLevel(level);
+    onEffortChangeProp?.(level);
+  }, [onEffortChangeProp]);
+
+  const handleReasoningChange = useCallback((level: ReasoningLevel) => {
+    setReasoningLevel(level);
+    onReasoningChangeProp?.(level);
+  }, [onReasoningChangeProp]);
+
+  const handleSpeedChange = useCallback((level: SpeedLevel) => {
+    setSpeedLevel(level);
+    onSpeedChangeProp?.(level);
+  }, [onSpeedChangeProp]);
   const [commandFilter, setCommandFilter] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -192,7 +310,8 @@ export function MessageInput({
   const modesRef = useRef<HTMLDivElement>(null);
   const modesSheetRef = useRef<HTMLDivElement>(null);
 
-  const currentMode = MODES.find((m) => m.id === permissionMode)!;
+  const providerModes = activeProvider === 'codex' ? CODEX_MODES : CLAUDE_MODES;
+  const currentMode = providerModes.find((m) => m.id === permissionMode) || providerModes[0];
 
   const filteredCommands = useMemo(() =>
     commands.filter((cmd) => cmd.name.toLowerCase().includes(commandFilter.toLowerCase())),
@@ -306,7 +425,7 @@ export function MessageInput({
 
   const getFileName = useCallback((path: string) => path.split("/").pop() || path, []);
 
-  const defaultPlaceholder = placeholder || (isMobile ? "Ask anything..." : "Esc to focus or unfocus Claude");
+  const defaultPlaceholder = placeholder || (isMobile ? "Ask anything..." : "Esc to focus or unfocus chat");
 
   return (
     <div className="relative p-2 pb-4 lg:p-3" style={{ background: 'var(--bg-primary)' }}>
@@ -448,7 +567,7 @@ export function MessageInput({
             {showModes && (
               <div className="hidden lg:block absolute bottom-full right-0 mb-2 w-72 rounded-xl shadow-2xl overflow-hidden z-50 animate-fade-in"
                 style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
-                <ModesList permissionMode={permissionMode} onSelect={(id) => { setPermissionMode(id); setShowModes(false); }} effortLevel={effortLevel} onEffortChange={setEffortLevel} showShortcut />
+                <ModesList permissionMode={permissionMode} onSelect={(id) => { handlePermissionChange(id); setShowModes(false); }} effortLevel={effortLevel} onEffortChange={handleEffortChange} reasoningLevel={reasoningLevel} onReasoningChange={handleReasoningChange} speedLevel={speedLevel} onSpeedChange={handleSpeedChange} showShortcut provider={activeProvider} />
               </div>
             )}
           </div>
@@ -467,7 +586,7 @@ export function MessageInput({
                 <div className="flex justify-center pt-3 pb-1">
                   <div className="w-10 h-1 rounded-full" style={{ background: 'var(--border-secondary)' }} />
                 </div>
-                <ModesList permissionMode={permissionMode} onSelect={(id) => { setPermissionMode(id); setShowModes(false); }} effortLevel={effortLevel} onEffortChange={setEffortLevel} showShortcut={false} />
+                <ModesList permissionMode={permissionMode} onSelect={(id) => { handlePermissionChange(id); setShowModes(false); }} effortLevel={effortLevel} onEffortChange={handleEffortChange} reasoningLevel={reasoningLevel} onReasoningChange={handleReasoningChange} speedLevel={speedLevel} onSpeedChange={handleSpeedChange} showShortcut={false} provider={activeProvider} />
                 {/* Cancel button */}
                 <div className="px-4 pb-4 pt-2">
                   <button onClick={() => setShowModes(false)}

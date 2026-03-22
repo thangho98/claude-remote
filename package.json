@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": ["server", "client", "shared"],
   "scripts": {
+    "predev": "lsof -ti :${PORT:-5554} | xargs kill -9 2>/dev/null || true",
     "dev": "env-cmd concurrently \"bun run dev:server\" \"bun run dev:client\"",
     "dev:server": "cd server && bun run dev",
     "dev:client": "cd client && bun run dev",

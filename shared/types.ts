@@ -2,12 +2,14 @@
 export type WSClientEvent =
   | { type: 'auth'; token: string }
   | { type: 'message'; content: string }
+  | { type: 'provider:set'; provider: ChatProvider }
+  | { type: 'interface:set'; provider: ChatProvider; interface: ProviderInterface }
   | { type: 'project:switch'; path: string }
   | { type: 'file:read'; path: string }
   | { type: 'file:list'; path: string }
   | { type: 'session:list' }
   | { type: 'session:switch'; sessionId: string }
-  | { type: 'session:new' }
+  | { type: 'session:new'; provider?: ChatProvider }
   | { type: 'session:resume'; sessionId: string }
   | { type: 'commands:list' }
   | { type: 'git:status' }
@@ -24,7 +26,11 @@ export type WSClientEvent =
   | { type: 'settings:get' }
   | { type: 'profiles:list' }
   | { type: 'profile:set'; profilePath: string }
-  | { type: 'browse:list'; path: string };
+  | { type: 'browse:list'; path: string }
+  | { type: 'permission:set'; provider: ChatProvider; mode: string }
+  | { type: 'effort:set'; level: string }
+  | { type: 'reasoning:set'; level: string }
+  | { type: 'speed:set'; level: string };
 
 // WebSocket Events: Server → Client
 export type WSServerEvent =
@@ -61,10 +67,72 @@ export type WSServerEvent =
   | { type: 'terminal:sessions'; sessions: TerminalSession[] }
   | { type: 'terminal:buffer'; id: string; data: string }
   | { type: 'tool:permission_request'; requestId: string; tool: string; input: Record<string, unknown>; sessionId: string }
-  | { type: 'settings:info'; provider: string; permissionMode: string; model: string; mcpServers: { name: string; type: string; status: string }[]; claudeConfig: Record<string, unknown>; tokenUsage: TokenUsage | null; maxMessagesPerSession: number; maxSessionsPerProject: number }
+  | {
+      type: 'settings:info';
+      provider: ChatProvider;
+      interface: ProviderInterface;
+      providers: ProviderSettingsSummary[];
+      permissionMode: string;
+      model: string;
+      models: { value: string; displayName: string; description: string }[];
+      mcpServers: { name: string; type: string; status: string }[];
+      claudeConfig: Record<string, unknown>;
+      tokenUsage: TokenUsage | null;
+      costInfo: { totalCostUsd: number; usage: Record<string, unknown>; modelUsage: Record<string, unknown> } | null;
+      rateLimits: Record<string, { resetsAt?: number; status: string }>;
+      accountInfo: { email?: string; subscriptionType?: string; apiProvider?: string } | null;
+      usageQuota: {
+        five_hour: { utilization: number; resets_at: string } | null;
+        seven_day: { utilization: number; resets_at: string } | null;
+        seven_day_sonnet: { utilization: number; resets_at: string } | null;
+        seven_day_opus: { utilization: number; resets_at: string } | null;
+      } | null;
+      maxMessagesPerSession: number;
+      maxSessionsPerProject: number;
+    }
   | { type: 'models:list'; models: { value: string; displayName: string; description: string }[] }
   | { type: 'profiles:list'; profiles: SettingsProfile[] }
   | { type: 'browse:list'; path: string; entries: BrowseEntry[] };
+
+export type ChatProvider = 'claude' | 'codex';
+export type ProviderInterface = 'sdk' | 'cli';
+
+export interface ProviderOption {
+  value: ChatProvider;
+  label: string;
+  available: boolean;
+}
+
+export interface ProviderInterfaceOption {
+  value: ProviderInterface;
+  label: string;
+  available: boolean;
+}
+
+export interface ProviderSettingsSummary {
+  provider: ChatProvider;
+  label: string;
+  active: boolean;
+  available: boolean;
+  interface: ProviderInterface;
+  interfaces: ProviderInterfaceOption[];
+  permissionMode: string;
+  model: string;
+  models: { value: string; displayName: string; description: string }[];
+  mcpServers: { name: string; type: string; status: string }[];
+  claudeConfig: Record<string, unknown>;
+  tokenUsage: TokenUsage | null;
+  costInfo: { totalCostUsd: number; usage: Record<string, unknown>; modelUsage: Record<string, unknown> } | null;
+  rateLimits: Record<string, { resetsAt?: number; status: string }>;
+  accountInfo: { email?: string; subscriptionType?: string; apiProvider?: string } | null;
+  reasoningLevel: string | null;
+  usageQuota: {
+    five_hour: { utilization: number; resets_at: string } | null;
+    seven_day: { utilization: number; resets_at: string } | null;
+    seven_day_sonnet: { utilization: number; resets_at: string } | null;
+    seven_day_opus: { utilization: number; resets_at: string } | null;
+  } | null;
+}
 
 export interface BrowseEntry {
   name: string;
@@ -143,6 +211,7 @@ export interface FileNode {
 
 export interface Session {
   id: string;
+  provider: ChatProvider;
   title: string; // Summary from Claude Code, or firstPrompt as fallback
   firstPrompt: string;
   lastMessage?: string;

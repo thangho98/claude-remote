@@ -1,7 +1,22 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { persist } from 'zustand/middleware';
-import type { Message, Project, FileNode, Session, TokenUsage, SlashCommand, GitStatusInfo, GitChange, GitDiffResult, TerminalSession, SettingsProfile } from '@shared/types';
+import type {
+  Message,
+  Project,
+  FileNode,
+  Session,
+  TokenUsage,
+  SlashCommand,
+  GitStatusInfo,
+  GitChange,
+  GitDiffResult,
+  TerminalSession,
+  SettingsProfile,
+  ChatProvider,
+  ProviderInterface,
+  ProviderSettingsSummary,
+} from '@shared/types';
 
 interface AppState {
   // Auth
@@ -44,7 +59,9 @@ interface AppState {
 
   // Settings
   settings: {
-    provider: string;
+    provider: ChatProvider;
+    interface: ProviderInterface;
+    providers: ProviderSettingsSummary[];
     permissionMode: string;
     model: string;
     models: { value: string; displayName: string; description: string }[];

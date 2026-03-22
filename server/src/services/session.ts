@@ -215,6 +215,7 @@ export async function listSessions(projectPath: string): Promise<Session[]> {
 
       return {
         id: sessionId,
+        provider: 'claude' as const,
         title,
         firstPrompt,
         lastMessage,

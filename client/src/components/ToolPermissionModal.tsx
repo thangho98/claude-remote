@@ -129,7 +129,7 @@ export function ToolPermissionModal({ request, onRespond }: ToolPermissionModalP
               Tool Permission Request
             </h3>
             <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary, #888888)' }}>
-              Claude wants to use <strong>{label}</strong>
+              Assistant wants to use <strong>{label}</strong>
             </p>
           </div>
           {/* Countdown */}
