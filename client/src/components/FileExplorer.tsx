@@ -14,7 +14,7 @@ export const FileExplorer = memo(function FileExplorer({
 }: FileExplorerProps) {
   if (!tree) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500">
+      <div className="flex items-center justify-center h-full" style={{ color: "var(--text-muted)" }}>
         <p>No project selected</p>
       </div>
     );
@@ -74,10 +74,12 @@ const FileTreeNode = memo(function FileTreeNode({
     <div>
       <button
         onClick={handleClick}
-        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left hover:bg-gray-700/50 transition-colors ${
-          isSelected ? "bg-orange-600/30 text-orange-300" : "text-gray-300"
-        }`}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
+        className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left transition-colors"
+        style={{
+          paddingLeft: `${depth * 12 + 8}px`,
+          color: isSelected ? "var(--accent)" : "var(--text-secondary)",
+          backgroundColor: isSelected ? "color-mix(in srgb, var(--accent) 30%, transparent)" : undefined,
+        }}
       >
         {node.type === "directory" ? (
           <>
@@ -352,7 +354,7 @@ const FileIcon = memo(function FileIcon({ filename }: { filename: string }) {
 
   // Default file icon
   return (
-    <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+    <svg className="w-4 h-4" style={{ color: "var(--text-tertiary)" }} fill="currentColor" viewBox="0 0 20 20">
       <path
         fillRule="evenodd"
         d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"

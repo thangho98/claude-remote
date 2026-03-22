@@ -29,41 +29,53 @@ export async function listProjects(): Promise<Project[]> {
       const claudeFolderPath = join(CLAUDE_PROJECTS_DIR, entry);
 
       try {
-        // Read sessions-index.json to get the original path
-        const indexPath = join(claudeFolderPath, "sessions-index.json");
-        const indexContent = await readFile(indexPath, "utf-8");
-        const indexData: SessionsIndex = JSON.parse(indexContent);
+        const folderStats = await stat(claudeFolderPath);
+        if (!folderStats.isDirectory()) continue;
 
-        const projectPath = indexData.originalPath;
-        if (!projectPath) continue;
+        // Try sessions-index.json first for original path
+        let projectPath: string | null = null;
+        try {
+          const indexPath = join(claudeFolderPath, "sessions-index.json");
+          const indexContent = await readFile(indexPath, "utf-8");
+          const indexData: SessionsIndex = JSON.parse(indexContent);
+          if (indexData.originalPath) {
+            projectPath = indexData.originalPath;
+          }
+        } catch {
+          // No index — derive path from folder name
+        }
 
-        // Verify the path still exists
-        const stats = await stat(projectPath);
-        if (!stats.isDirectory()) continue;
+        // Fallback: convert folder name back to path
+        // e.g. "-Users-thawng-Desktop-source-AI-claude-remote" → "/Users/thawng/Desktop/source/AI/claude-remote"
+        if (!projectPath) {
+          projectPath = entry.replace(/^-/, "/").replace(/-/g, "/");
+        }
 
-        // Get all files in project folder and find the latest modified
+        // Verify the path exists
+        try {
+          const pathStats = await stat(projectPath);
+          if (!pathStats.isDirectory()) continue;
+        } catch {
+          continue; // Path no longer exists
+        }
+
+        // Find latest modified file in the claude project folder
         let latestModified = new Date(0);
         try {
           const projectFiles = await readdir(claudeFolderPath);
           for (const file of projectFiles) {
             if (file.startsWith(".")) continue;
-            const filePath = join(claudeFolderPath, file);
             try {
-              const fileStats = await stat(filePath);
+              const fileStats = await stat(join(claudeFolderPath, file));
               if (fileStats.mtime > latestModified) {
                 latestModified = fileStats.mtime;
               }
-            } catch {
-              // Skip files we can't stat
-            }
+            } catch { /* skip */ }
           }
-        } catch {
-          // Fallback to folder mtime if readdir fails
-        }
+        } catch { /* use folder mtime */ }
 
-        // If no files found or readdir failed, use folder mtime
         if (latestModified.getTime() === 0) {
-          latestModified = stats.mtime;
+          latestModified = folderStats.mtime;
         }
 
         projects.push({
@@ -73,7 +85,7 @@ export async function listProjects(): Promise<Project[]> {
           lastModified: latestModified.toISOString(),
         });
       } catch {
-        // Skip if sessions-index.json doesn't exist or is invalid
+        // Skip inaccessible folders
       }
     }
   } catch {

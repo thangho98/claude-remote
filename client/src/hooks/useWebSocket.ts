@@ -87,7 +87,7 @@ export function useWebSocket({
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
     const host = isDev
-      ? (isLocalhost ? "localhost:3001" : `${window.location.hostname}:3001`)
+      ? (isLocalhost ? "localhost:5554" : `${window.location.hostname}:5554`)
       : window.location.host;
     const url = `${protocol}//${host}/ws?token=${encodeURIComponent(currentToken)}`;
 

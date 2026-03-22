@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { persist } from 'zustand/middleware';
-import type { Message, Project, FileNode, Session, TokenUsage, SlashCommand, GitStatusInfo, GitChange, GitDiffResult, TerminalSession } from '@shared/types';
+import type { Message, Project, FileNode, Session, TokenUsage, SlashCommand, GitStatusInfo, GitChange, GitDiffResult, TerminalSession, SettingsProfile } from '@shared/types';
 
 interface AppState {
   // Auth
@@ -15,8 +15,9 @@ interface AppState {
   currentProject: Project | null;
   projects: Project[];
 
-  // Chat
-  messages: Message[];
+  // Chat - keyed by sessionId
+  messagesBySession: Record<string, Message[]>;
+  currentMessages: Message[]; // Computed from currentSession
   isLoading: boolean;
   isThinking: boolean;
 
@@ -41,11 +42,41 @@ interface AppState {
   selectedDiff: GitDiffResult | null;
   bottomPanelTab: 'terminal' | 'git';
 
+  // Settings
+  settings: {
+    provider: string;
+    permissionMode: string;
+    model: string;
+    models: { value: string; displayName: string; description: string }[];
+    mcpServers: { name: string; type: string; status: string }[];
+    claudeConfig: Record<string, unknown>;
+    tokenUsage: TokenUsage | null;
+    costInfo: { totalCostUsd: number; usage: Record<string, unknown>; modelUsage: Record<string, unknown> } | null;
+    rateLimits: Record<string, { resetsAt?: number; status: string }>;
+    accountInfo: { email?: string; subscriptionType?: string; apiProvider?: string } | null;
+    usageQuota: {
+      five_hour: { utilization: number; resets_at: string } | null;
+      seven_day: { utilization: number; resets_at: string } | null;
+      seven_day_sonnet: { utilization: number; resets_at: string } | null;
+      seven_day_opus: { utilization: number; resets_at: string } | null;
+    } | null;
+    maxMessagesPerSession: number;
+    maxSessionsPerProject: number;
+  } | null;
+
+  // Models
+  models: { value: string; displayName: string; description: string }[];
+
   // UI
-  activeTab: 'chat' | 'file' | 'files' | 'terminal' | 'git';
+  activeTab: 'chat' | 'files' | 'terminal' | 'git';
+  theme: 'light' | 'dark';
 
   // Commands
   commands: SlashCommand[];
+
+  // Profiles
+  profiles: SettingsProfile[];
+  currentProfile: SettingsProfile | null;
 }
 
 interface AppActions {
@@ -61,15 +92,16 @@ interface AppActions {
   setProjects: (projects: Project[]) => void;
   setCurrentProject: (project: Project | null) => void;
 
-  // Messages
-  setMessages: (messages: Message[]) => void;
-  addMessage: (message: Message) => void;
-  updateMessage: (id: string, content: string) => void;
-  upsertMessage: (message: Message) => void;
-  addToolUseToMessage: (id: string, toolName: string, toolInput: string) => void;
-  addThinkingToMessage: (id: string, content: string) => void;
-  setMessageDone: (id: string) => void;
-  clearMessages: () => void;
+  // Messages - now session-scoped
+  setMessagesForSession: (sessionId: string, messages: Message[]) => void;
+  addMessageToSession: (sessionId: string, message: Message) => void;
+  updateMessageInSession: (sessionId: string, messageId: string, content: string) => void;
+  upsertMessageInSession: (sessionId: string, message: Message) => void;
+  addToolUseToMessageInSession: (sessionId: string, messageId: string, toolName: string, toolInput: string) => void;
+  addThinkingToMessageInSession: (sessionId: string, messageId: string, content: string) => void;
+  setMessageDoneInSession: (sessionId: string, messageId: string) => void;
+  clearMessagesForSession: (sessionId: string) => void;
+  clearAllMessages: () => void;
 
   // Files
   setFileTree: (tree: FileNode | null) => void;
@@ -99,11 +131,20 @@ interface AppActions {
   setSelectedDiff: (diff: GitDiffResult | null) => void;
   setBottomPanelTab: (tab: 'terminal' | 'git') => void;
 
+  // Settings
+  setSettings: (settings: AppState['settings']) => void;
+  setModels: (models: AppState['models']) => void;
+
   // UI
-  setActiveTab: (tab: 'chat' | 'file' | 'files' | 'terminal' | 'git') => void;
+  setActiveTab: (tab: 'chat' | 'files' | 'terminal' | 'git') => void;
+  setTheme: (theme: 'light' | 'dark') => void;
 
   // Commands
   setCommands: (commands: SlashCommand[]) => void;
+
+  // Profiles
+  setProfiles: (profiles: SettingsProfile[]) => void;
+  setCurrentProfile: (profile: SettingsProfile | null) => void;
 }
 
 export const useAppStore = create<AppState & AppActions>()(
@@ -115,7 +156,8 @@ export const useAppStore = create<AppState & AppActions>()(
       isConnected: false,
       currentProject: null,
       projects: [],
-      messages: [],
+      messagesBySession: {},
+      currentMessages: [],
       isLoading: false,
       isThinking: false,
       fileTree: null,
@@ -131,8 +173,13 @@ export const useAppStore = create<AppState & AppActions>()(
       gitChanges: [],
       selectedDiff: null,
       bottomPanelTab: 'terminal',
+      settings: null,
+      models: [],
       activeTab: 'chat',
+      theme: 'dark',
       commands: [],
+      profiles: [],
+      currentProfile: null,
 
       // Auth
       setToken: (token) => set({ token }),
@@ -142,7 +189,8 @@ export const useAppStore = create<AppState & AppActions>()(
           token: null,
           authenticated: false,
           isConnected: false,
-          messages: [],
+          messagesBySession: {},
+          currentMessages: [],
           currentProject: null,
         }),
 
@@ -154,7 +202,8 @@ export const useAppStore = create<AppState & AppActions>()(
       setCurrentProject: (currentProject) =>
         set({
           currentProject,
-          messages: [],
+          messagesBySession: {},
+          currentMessages: [],
           sessions: [],
           currentSession: null,
           currentModel: null,
@@ -166,20 +215,41 @@ export const useAppStore = create<AppState & AppActions>()(
           activeTerminalId: null,
         }),
 
-      // Messages
-      setMessages: (messages) => set({ messages }),
-      addMessage: (message) =>
+      // Messages - session scoped
+      setMessagesForSession: (sessionId, messages) =>
         set((state) => {
-          if (state.messages.some((m) => m.id === message.id)) {
-            return state;
-          }
-          return { messages: [...state.messages, message] };
+          // Trim to max messages limit from settings (default 50)
+          const maxMessages = state.settings?.maxMessagesPerSession ?? 50;
+          const trimmedMessages = messages.length > maxMessages ? messages.slice(-maxMessages) : messages;
+          return {
+            messagesBySession: { ...state.messagesBySession, [sessionId]: trimmedMessages },
+            currentMessages: state.currentSession?.id === sessionId ? trimmedMessages : state.currentMessages,
+          };
         }),
 
-      updateMessage: (id, content) =>
-        set((state) => ({
-          messages: state.messages.map((m) => {
-            if (m.id !== id) return m;
+      addMessageToSession: (sessionId, message) =>
+        set((state) => {
+          const sessionMessages = state.messagesBySession[sessionId] || [];
+          if (sessionMessages.some((m) => m.id === message.id)) {
+            return state;
+          }
+          // Trim to max messages limit from settings (default 50)
+          const maxMessages = state.settings?.maxMessagesPerSession ?? 50;
+          let newMessages = [...sessionMessages, message];
+          if (newMessages.length > maxMessages) {
+            newMessages = newMessages.slice(-maxMessages);
+          }
+          return {
+            messagesBySession: { ...state.messagesBySession, [sessionId]: newMessages },
+            currentMessages: state.currentSession?.id === sessionId ? newMessages : state.currentMessages,
+          };
+        }),
+
+      updateMessageInSession: (sessionId, messageId, content) =>
+        set((state) => {
+          const sessionMessages = state.messagesBySession[sessionId] || [];
+          const newMessages = sessionMessages.map((m) => {
+            if (m.id !== messageId) return m;
             if (typeof m.content === 'string') {
               return { ...m, content: m.content + content };
             }
@@ -191,24 +261,40 @@ export const useAppStore = create<AppState & AppActions>()(
               blocks.push({ type: 'text' as const, text: content });
             }
             return { ...m, content: blocks };
-          }),
-        })),
-
-      upsertMessage: (message) =>
-        set((state) => {
-          const index = state.messages.findIndex((m) => m.id === message.id);
-          if (index !== -1) {
-            const newMessages = [...state.messages];
-            newMessages[index] = message;
-            return { messages: newMessages };
-          }
-          return { messages: [...state.messages, message] };
+          });
+          return {
+            messagesBySession: { ...state.messagesBySession, [sessionId]: newMessages },
+            currentMessages: state.currentSession?.id === sessionId ? newMessages : state.currentMessages,
+          };
         }),
 
-      addToolUseToMessage: (id, toolName, toolInput) =>
-        set((state) => ({
-          messages: state.messages.map((m) => {
-            if (m.id !== id) return m;
+      upsertMessageInSession: (sessionId, message) =>
+        set((state) => {
+          const sessionMessages = state.messagesBySession[sessionId] || [];
+          const index = sessionMessages.findIndex((m) => m.id === message.id);
+          let newMessages: Message[];
+          if (index !== -1) {
+            newMessages = [...sessionMessages];
+            newMessages[index] = message;
+          } else {
+            newMessages = [...sessionMessages, message];
+          }
+          // Trim to max messages limit from settings (default 50)
+          const maxMessages = state.settings?.maxMessagesPerSession ?? 50;
+          if (newMessages.length > maxMessages) {
+            newMessages = newMessages.slice(-maxMessages);
+          }
+          return {
+            messagesBySession: { ...state.messagesBySession, [sessionId]: newMessages },
+            currentMessages: state.currentSession?.id === sessionId ? newMessages : state.currentMessages,
+          };
+        }),
+
+      addToolUseToMessageInSession: (sessionId, messageId, toolName, toolInput) =>
+        set((state) => {
+          const sessionMessages = state.messagesBySession[sessionId] || [];
+          const newMessages = sessionMessages.map((m) => {
+            if (m.id !== messageId) return m;
             const currentContent =
               typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : m.content;
             let parsedInput: Record<string, unknown> = {};
@@ -225,16 +311,21 @@ export const useAppStore = create<AppState & AppActions>()(
               ...m,
               content: [
                 ...currentContent,
-                { type: 'tool_use' as const, id: `${id}-${toolName}`, name: toolName, input: parsedInput },
+                { type: 'tool_use' as const, id: `${messageId}-${toolName}`, name: toolName, input: parsedInput },
               ],
             };
-          }),
-        })),
+          });
+          return {
+            messagesBySession: { ...state.messagesBySession, [sessionId]: newMessages },
+            currentMessages: state.currentSession?.id === sessionId ? newMessages : state.currentMessages,
+          };
+        }),
 
-      addThinkingToMessage: (id, content) =>
-        set((state) => ({
-          messages: state.messages.map((m) => {
-            if (m.id !== id) return m;
+      addThinkingToMessageInSession: (sessionId, messageId, content) =>
+        set((state) => {
+          const sessionMessages = state.messagesBySession[sessionId] || [];
+          const newMessages = sessionMessages.map((m) => {
+            if (m.id !== messageId) return m;
             const currentContent =
               typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : [...m.content];
             const lastBlock = currentContent[currentContent.length - 1];
@@ -250,15 +341,33 @@ export const useAppStore = create<AppState & AppActions>()(
                 content: [...currentContent, { type: 'thinking' as const, thinking: content }],
               };
             }
-          }),
-        })),
+          });
+          return {
+            messagesBySession: { ...state.messagesBySession, [sessionId]: newMessages },
+            currentMessages: state.currentSession?.id === sessionId ? newMessages : state.currentMessages,
+          };
+        }),
 
-      setMessageDone: (id) =>
-        set((state) => ({
-          messages: state.messages.map((m) => (m.id === id ? { ...m, isStreaming: false } : m)),
-        })),
+      setMessageDoneInSession: (sessionId, messageId) =>
+        set((state) => {
+          const sessionMessages = state.messagesBySession[sessionId] || [];
+          const newMessages = sessionMessages.map((m) => (m.id === messageId ? { ...m, isStreaming: false } : m));
+          return {
+            messagesBySession: { ...state.messagesBySession, [sessionId]: newMessages },
+            currentMessages: state.currentSession?.id === sessionId ? newMessages : state.currentMessages,
+          };
+        }),
 
-      clearMessages: () => set({ messages: [] }),
+      clearMessagesForSession: (sessionId) =>
+        set((state) => {
+          const { [sessionId]: _, ...rest } = state.messagesBySession;
+          return {
+            messagesBySession: rest,
+            currentMessages: state.currentSession?.id === sessionId ? [] : state.currentMessages,
+          };
+        }),
+
+      clearAllMessages: () => set({ messagesBySession: {}, currentMessages: [] }),
 
       // Files
       setFileTree: (fileTree) => set({ fileTree }),
@@ -300,7 +409,11 @@ export const useAppStore = create<AppState & AppActions>()(
 
       // Sessions
       setSessions: (sessions) => set({ sessions }),
-      setCurrentSession: (currentSession) => set({ currentSession }),
+      setCurrentSession: (currentSession) =>
+        set((state) => ({
+          currentSession,
+          currentMessages: currentSession ? state.messagesBySession[currentSession.id] || [] : [],
+        })),
       setCurrentModel: (currentModel) => set({ currentModel }),
       setTokenUsage: (tokenUsage) => set({ tokenUsage }),
 
@@ -310,17 +423,25 @@ export const useAppStore = create<AppState & AppActions>()(
       setSelectedDiff: (selectedDiff) => set({ selectedDiff }),
       setBottomPanelTab: (bottomPanelTab) => set({ bottomPanelTab }),
 
+      // Settings
+      setSettings: (settings) => set({ settings }),
+      setModels: (models) => set({ models }),
+
       // UI
       setActiveTab: (activeTab) => set({ activeTab }),
+      setTheme: (theme) => set({ theme }),
 
       // Commands
       setCommands: (commands) => set({ commands }),
+      setProfiles: (profiles) => set({ profiles }),
+      setCurrentProfile: (currentProfile) => set({ currentProfile }),
     }),
     {
       name: 'claude-remote-storage',
       partialize: (state) => ({
         token: state.token,
         currentProject: state.currentProject,
+        theme: state.theme,
       }),
     },
   ),
@@ -342,7 +463,14 @@ export const useFileStore = () =>
   useAppStore(useShallow((s) => ({ fileTree: s.fileTree, selectedFile: s.selectedFile, setSelectedFile: s.setSelectedFile })));
 
 export const useMessageStore = () =>
-  useAppStore(useShallow((s) => ({ messages: s.messages, addMessage: s.addMessage, clearMessages: s.clearMessages })));
+  useAppStore(useShallow((s) => ({
+    messages: s.currentMessages,
+    messagesBySession: s.messagesBySession,
+    addMessageToSession: s.addMessageToSession,
+    clearAllMessages: s.clearAllMessages,
+    clearMessagesForSession: s.clearMessagesForSession,
+    setMessagesForSession: s.setMessagesForSession,
+  })));
 
 export const useLoadingStore = () =>
   useAppStore(useShallow((s) => ({ isLoading: s.isLoading, setLoading: s.setLoading, isThinking: s.isThinking })));
@@ -384,5 +512,8 @@ export const useBottomPanelStore = () =>
     setBottomPanelTab: s.setBottomPanelTab,
   })));
 
+export const useSettingsStore = () =>
+  useAppStore(useShallow((s) => ({ settings: s.settings, setSettings: s.setSettings })));
+
 export const useUIStore = () =>
-  useAppStore(useShallow((s) => ({ activeTab: s.activeTab, setActiveTab: s.setActiveTab, commands: s.commands })));
+  useAppStore(useShallow((s) => ({ activeTab: s.activeTab, setActiveTab: s.setActiveTab, commands: s.commands, models: s.models, theme: s.theme, setTheme: s.setTheme, profiles: s.profiles, currentProfile: s.currentProfile, setCurrentProfile: s.setCurrentProfile })));

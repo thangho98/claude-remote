@@ -1,4 +1,4 @@
-import { readdir, stat, readFile } from "fs/promises";
+import { readdir, stat, readFile, writeFile } from "fs/promises";
 import { join, basename, resolve } from "path";
 import type { FileNode } from "../../../shared/types";
 
@@ -66,6 +66,10 @@ export async function readFileContent(filePath: string): Promise<string> {
   } catch (error) {
     throw new Error(`Cannot read file: ${filePath}`);
   }
+}
+
+export async function writeFileContent(filePath: string, content: string): Promise<void> {
+  await writeFile(filePath, content, "utf-8");
 }
 
 export function isPathSafe(basePath: string, targetPath: string): boolean {

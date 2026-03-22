@@ -37,7 +37,7 @@ export async function getClaudeProvider(): Promise<ClaudeProvider> {
   }
 
   // Check environment variable for preferred provider
-  const preferredType = (process.env.CLAUDE_PROVIDER as ClaudeProviderType) || "cli";
+  const preferredType = (process.env.CLAUDE_PROVIDER as ClaudeProviderType) || "sdk";
 
   const provider = getProviderInstance(preferredType);
   const isAvailable = await provider.isAvailable();

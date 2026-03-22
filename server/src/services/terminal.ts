@@ -9,12 +9,29 @@ interface WSData {
 }
 
 const MAX_TERMINALS_PER_CONNECTION = 5;
+const MAX_BUFFER_SIZE = 50000;
+
+class CircularBuffer {
+  private buffer = '';
+
+  append(data: string): void {
+    this.buffer += data;
+    if (this.buffer.length > MAX_BUFFER_SIZE) {
+      this.buffer = this.buffer.slice(this.buffer.length - MAX_BUFFER_SIZE);
+    }
+  }
+
+  toString(): string {
+    return this.buffer;
+  }
+}
 
 interface ManagedTerminal {
   terminal: InstanceType<typeof Bun.Terminal>;
   proc: ReturnType<typeof Bun.spawn>;
   session: TerminalSession;
   ws: ServerWebSocket<WSData>;
+  outputBuffer: CircularBuffer;
 }
 
 const terminals = new Map<string, ManagedTerminal>();
@@ -77,8 +94,14 @@ export function createTerminal(
       rows: rows || 24,
       data(_terminal: InstanceType<typeof Bun.Terminal>, data: Uint8Array) {
         const base64 = Buffer.from(data).toString('base64');
+        const managed = terminals.get(id);
+        if (managed) {
+          managed.outputBuffer.append(Buffer.from(data).toString());
+        }
         try {
-          ws.send(JSON.stringify({
+          const currentManaged = terminals.get(id);
+          const currentWs = currentManaged ? currentManaged.ws : ws;
+          currentWs.send(JSON.stringify({
             type: 'terminal:data',
             id,
             data: base64,
@@ -116,7 +139,7 @@ export function createTerminal(
     },
   });
 
-  terminals.set(id, { terminal: proc.terminal!, proc, session, ws });
+  terminals.set(id, { terminal: proc.terminal!, proc, session, ws, outputBuffer: new CircularBuffer() });
   return session;
 }
 
@@ -175,4 +198,28 @@ export function closeTerminalsByDirectory(ws: ServerWebSocket<WSData>, cwd: stri
       terminals.delete(id);
     }
   }
+}
+
+export function reconnectTerminal(oldWs: ServerWebSocket<WSData>, newWs: ServerWebSocket<WSData>): void {
+  for (const managed of terminals.values()) {
+    if (managed.ws === oldWs) {
+      managed.ws = newWs;
+    }
+  }
+}
+
+export function getTerminalBuffer(id: string): string {
+  const managed = terminals.get(id);
+  if (!managed) return '';
+  return managed.outputBuffer.toString();
+}
+
+export function listTerminals(ws: ServerWebSocket<WSData>): TerminalSession[] {
+  const sessions: TerminalSession[] = [];
+  for (const managed of terminals.values()) {
+    if (managed.ws === ws) {
+      sessions.push(managed.session);
+    }
+  }
+  return sessions;
 }

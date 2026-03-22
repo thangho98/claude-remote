@@ -4,21 +4,21 @@ import type { SlashCommand } from "../../../shared/types";
 
 // Built-in Claude Code commands
 const BUILTIN_COMMANDS: SlashCommand[] = [
-  { name: "help", description: "Show available commands", source: "builtin" },
-  { name: "clear", description: "Clear conversation history", source: "builtin" },
-  { name: "compact", description: "Compact conversation to save context", source: "builtin" },
-  { name: "config", description: "View/modify configuration", source: "builtin" },
-  { name: "cost", description: "Show token usage and cost", source: "builtin" },
-  { name: "doctor", description: "Check Claude Code health", source: "builtin" },
-  { name: "init", description: "Initialize CLAUDE.md in project", source: "builtin" },
-  { name: "login", description: "Switch account or auth method", source: "builtin" },
-  { name: "logout", description: "Sign out", source: "builtin" },
-  { name: "memory", description: "Edit CLAUDE.md memory files", source: "builtin" },
-  { name: "model", description: "Show or switch AI model", source: "builtin" },
-  { name: "permissions", description: "Manage tool permissions", source: "builtin" },
-  { name: "review", description: "Code review current changes", source: "builtin" },
-  { name: "status", description: "Show current session info", source: "builtin" },
-  { name: "vim", description: "Toggle Vim mode", source: "builtin" },
+  { name: "help", description: "Show available commands", source: "builtin", kind: "builtin" },
+  { name: "clear", description: "Clear conversation history", source: "builtin", kind: "builtin" },
+  { name: "compact", description: "Compact conversation to save context", source: "builtin", kind: "builtin" },
+  { name: "config", description: "View/modify configuration", source: "builtin", kind: "builtin" },
+  { name: "cost", description: "Show token usage and cost", source: "builtin", kind: "builtin" },
+  { name: "doctor", description: "Check Claude Code health", source: "builtin", kind: "builtin" },
+  { name: "init", description: "Initialize CLAUDE.md in project", source: "builtin", kind: "builtin" },
+  { name: "login", description: "Switch account or auth method", source: "builtin", kind: "builtin" },
+  { name: "logout", description: "Sign out", source: "builtin", kind: "builtin" },
+  { name: "memory", description: "Edit CLAUDE.md memory files", source: "builtin", kind: "builtin" },
+  { name: "model", description: "Show or switch AI model", source: "builtin", kind: "builtin" },
+  { name: "permissions", description: "Manage tool permissions", source: "builtin", kind: "builtin" },
+  { name: "review", description: "Code review current changes", source: "builtin", kind: "builtin" },
+  { name: "status", description: "Show current session info", source: "builtin", kind: "builtin" },
+  { name: "vim", description: "Toggle Vim mode", source: "builtin", kind: "builtin" },
 ];
 
 /**
@@ -68,6 +68,7 @@ async function listProjectCommands(workingDirectory: string): Promise<SlashComma
           name,
           description: firstLine || `Custom command: ${name}`,
           source: "project",
+          kind: "command",
         });
       }
     }
@@ -88,6 +89,7 @@ async function listProjectCommands(workingDirectory: string): Promise<SlashComma
             name: skill.name,
             description: skill.description,
             source: "project",
+            kind: "skill",
           });
         }
       }
@@ -113,10 +115,13 @@ async function listUserCommands(): Promise<SlashCommand[]> {
     for (const file of files) {
       if (file.endsWith(".md")) {
         const name = file.replace(".md", "");
+        const content = await readFile(join(commandsDir, file), "utf-8");
+        const firstLine = content.split("\n")[0].replace(/^#\s*/, "").trim();
         commands.push({
           name,
-          description: `User command: ${name}`,
+          description: firstLine || `User command: ${name}`,
           source: "user",
+          kind: "command",
         });
       }
     }
@@ -137,6 +142,7 @@ async function listUserCommands(): Promise<SlashCommand[]> {
             name: skill.name,
             description: skill.description,
             source: "user",
+            kind: "skill",
           });
         }
       }

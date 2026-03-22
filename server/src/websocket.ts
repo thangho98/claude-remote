@@ -1,17 +1,28 @@
 import type { ServerWebSocket } from 'bun';
 import type { WSClientEvent, WSServerEvent } from '../../shared/types';
-import { getFileTree, readFileContent, isPathSafe } from './services/file';
+import { getFileTree, readFileContent, writeFileContent, isPathSafe } from './services/file';
 import { listProjects } from './services/project';
-import { listSessions, getSessionInfo, getSessionMessages } from './services/session';
+import { listSessions, getSessionInfo, getSessionMessages, deleteSession } from './services/session';
 import { listCommands } from './services/commands';
 import { isGitRepo, getGitStatus, getGitChanges, getGitDiff } from './services/git';
 import { getClaudeProvider } from './claude/providers';
 import { getOrCreateSession } from './claude/session';
 import { subscribeToRoom, unsubscribeAll, getSubscribedRooms } from './rooms';
-import { createTerminal, writeToTerminal, resizeTerminal, closeTerminal, closeAllTerminals, closeTerminalsByDirectory } from './services/terminal';
+import { createTerminal, writeToTerminal, resizeTerminal, closeTerminal, closeAllTerminals, closeTerminalsByDirectory, reconnectTerminal, listTerminals } from './services/terminal';
+import { getClaudeConfig, getMcpServers, getProviderInfo, listSettingsProfiles } from './services/settings';
+import { fetchUsageQuota } from './services/usage';
+
+// Configurable limits (match with client settings)
+const MAX_SESSIONS_PER_PROJECT = 15;
 
 // Track all active WebSocket connections
 const activeConnections = new Set<ServerWebSocket<WSData>>();
+
+// Pending tool permission requests: requestId → resolve callback
+const pendingPermissions = new Map<string, (result: { allowed: boolean }) => void>();
+
+// Track last used profile per session: sessionId → profilePath
+const sessionLastProfile = new Map<string, string>();
 
 export function getConnections(): ServerWebSocket<WSData>[] {
   return Array.from(activeConnections);
@@ -66,6 +77,12 @@ async function handleEvent(ws: ServerWebSocket<WSData>, event: WSClientEvent) {
       // Send project list on auth
       const projects = await listProjects();
       send(ws, { type: 'project:list', projects });
+      // Send existing terminal sessions (for reconnection)
+      const existingTerminals = listTerminals(ws);
+      if (existingTerminals.length > 0) {
+        send(ws, { type: 'terminal:sessions', sessions: existingTerminals });
+      }
+      // Models loaded via piggyback on first user query
       break;
 
     case 'message':
@@ -94,8 +111,11 @@ async function handleEvent(ws: ServerWebSocket<WSData>, event: WSClientEvent) {
 
         // Auto-send session list after project switch
         const sessions = await listSessions(event.path);
-        send(ws, { type: 'session:list', sessions });
-        console.log(`📋 Sent ${sessions.length} sessions for ${event.path}`);
+        const trimmedSessions = sessions.length > MAX_SESSIONS_PER_PROJECT
+          ? sessions.slice(0, MAX_SESSIONS_PER_PROJECT)
+          : sessions;
+        send(ws, { type: 'session:list', sessions: trimmedSessions });
+        console.log(`📋 Sent ${trimmedSessions.length}/${sessions.length} sessions for ${event.path}`);
 
         // Auto-send git status after project switch
         try {
@@ -121,6 +141,10 @@ async function handleEvent(ws: ServerWebSocket<WSData>, event: WSClientEvent) {
 
     case 'file:read':
       await handleFileRead(ws, event.path);
+      break;
+
+    case 'file:write':
+      await handleFileWrite(ws, event.path, event.content);
       break;
 
     case 'file:list':
@@ -167,6 +191,62 @@ async function handleEvent(ws: ServerWebSocket<WSData>, event: WSClientEvent) {
       handleTerminalClose(ws, event.id);
       break;
 
+    case 'terminal:reconnect':
+      handleTerminalReconnect(ws);
+      break;
+
+    case 'settings:get':
+      await handleSettingsGet(ws);
+      break;
+
+    case 'tool:permission_response': {
+      const resolve = pendingPermissions.get(event.requestId);
+      if (resolve) {
+        pendingPermissions.delete(event.requestId);
+        resolve({ allowed: event.allowed });
+      }
+      break;
+    }
+
+    case 'model:set':
+      handleModelSet(ws, event.model);
+      break;
+
+    case 'profiles:list':
+      await handleProfilesList(ws);
+      break;
+
+    case 'browse:list':
+      await handleBrowseList(ws, event.path);
+      break;
+
+    case 'profile:set': {
+      const oldProfile = (ws.data as any).settingsProfile;
+      const newProfile = event.profilePath || undefined;
+      (ws.data as any).settingsProfile = newProfile;
+
+      // Save profile to session mapping if we have a current session
+      if (ws.data.currentSessionId && newProfile) {
+        sessionLastProfile.set(ws.data.currentSessionId, newProfile);
+        console.log(`💾 Saved profile '${newProfile}' for session ${ws.data.currentSessionId}`);
+      }
+
+      // If profile changed, clear current session to force new session
+      // (SDK doesn't support changing profile on resumed session)
+      if (oldProfile !== newProfile && ws.data.currentSessionId) {
+        ws.data.currentSessionId = null;
+        send(ws, { type: 'session:current', session: null });
+        console.log(`⚙️ Profile changed (${oldProfile || 'Default'} → ${newProfile || 'Default'}), session cleared to apply new settings`);
+      } else {
+        console.log(`⚙️ Profile set to: ${newProfile || 'Default'}`);
+      }
+      break;
+    }
+
+    case 'session:delete':
+      await handleSessionDelete(ws, event.sessionId);
+      break;
+
     default:
       console.warn('Unknown event type:', event);
   }
@@ -192,19 +272,24 @@ async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
       prompt: content,
       workingDirectory: session.workingDirectory,
       sessionId,
+      model: (ws.data as any).selectedModel || undefined,
+      settingsProfile: (ws.data as any).settingsProfile || undefined,
       handlers: {
         onChunk: (chunk) => {
-          send(ws, { type: 'message:chunk', content: chunk, id });
+          send(ws, { type: 'message:chunk', content: chunk, id, sessionId: ws.data.currentSessionId || id });
         },
         onDone: async () => {
-          send(ws, { type: 'message:done', id });
+          send(ws, { type: 'message:done', id, sessionId: ws.data.currentSessionId || id });
           console.log(`✅ Message ${id} completed`);
 
           // Refresh session list and info after message completes
           try {
             const sessions = await listSessions(ws.data.workingDirectory!);
-            send(ws, { type: 'session:list', sessions });
-            console.log(`🔄 Refreshed session list (${sessions.length} sessions)`);
+            const trimmedSessions = sessions.length > MAX_SESSIONS_PER_PROJECT
+              ? sessions.slice(0, MAX_SESSIONS_PER_PROJECT)
+              : sessions;
+            send(ws, { type: 'session:list', sessions: trimmedSessions });
+            console.log(`🔄 Refreshed session list (${trimmedSessions.length}/${sessions.length} sessions)`);
 
             // Update session info (model + token usage)
             if (ws.data.currentSessionId) {
@@ -218,22 +303,22 @@ async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
           }
         },
         onError: (error) => {
-          send(ws, { type: 'message:error', error, id });
+          send(ws, { type: 'message:error', error, id, sessionId: ws.data.currentSessionId || id });
           console.error(`❌ Message ${id} error:`, error);
         },
         onToolUse: (tool, input) => {
           send(ws, { type: 'terminal:output', content: `[${tool}] ${input}` });
-          send(ws, { type: 'message:tool_use', id, toolName: tool, toolInput: input });
+          send(ws, { type: 'message:tool_use', id, toolName: tool, toolInput: input, sessionId: ws.data.currentSessionId || id });
         },
         onToolResult: (tool, result) => {
           console.log(`📡 Sending tool result for ${tool} (${result.length} chars)`);
           send(ws, { type: 'terminal:output', content: result });
         },
         onThinking: (isThinking) => {
-          send(ws, { type: 'message:thinking', isThinking });
+          send(ws, { type: 'message:thinking', isThinking, sessionId: ws.data.currentSessionId || id });
         },
         onThinkingContent: (content) => {
-          send(ws, { type: 'message:thinking_content', id, content });
+          send(ws, { type: 'message:thinking_content', id, content, sessionId: ws.data.currentSessionId || id });
         },
         onSessionId: async (newSessionId) => {
           ws.data.currentSessionId = newSessionId;
@@ -248,6 +333,33 @@ async function handleMessage(ws: ServerWebSocket<WSData>, content: string) {
         },
         onMessage: (message) => {
           send(ws, { type: 'message:append', message });
+        },
+        onModelsLoaded: (models) => {
+          send(ws, { type: 'models:list', models });
+        },
+        onAccountInfoLoaded: (_info) => {
+          // Account info will be fetched via settings:get
+        },
+        onToolPermission: async (toolName, input, toolUseId) => {
+          const requestId = crypto.randomUUID();
+          send(ws, {
+            type: 'tool:permission_request',
+            requestId,
+            tool: toolName,
+            input,
+            sessionId: ws.data.currentSessionId || '',
+          });
+          // Wait for user response
+          return new Promise<{ allowed: boolean }>((resolve) => {
+            pendingPermissions.set(requestId, resolve);
+            // Auto-deny after 55 seconds
+            setTimeout(() => {
+              if (pendingPermissions.has(requestId)) {
+                pendingPermissions.delete(requestId);
+                resolve({ allowed: false });
+              }
+            }, 55000);
+          });
         },
       },
     });
@@ -277,6 +389,24 @@ async function handleFileRead(ws: ServerWebSocket<WSData>, path: string) {
   }
 }
 
+async function handleFileWrite(ws: ServerWebSocket<WSData>, path: string, content: string) {
+  console.log(`💾 Writing file: ${path} (workingDir: ${ws.data.workingDirectory})`);
+  try {
+    if (ws.data.workingDirectory && !isPathSafe(ws.data.workingDirectory, path)) {
+      console.warn(`⚠️ Access denied: ${path} not within ${ws.data.workingDirectory}`);
+      send(ws, { type: 'file:error', path, error: 'Access denied' });
+      return;
+    }
+
+    await writeFileContent(path, content);
+    console.log(`✅ File saved: ${path} (${content.length} chars)`);
+    send(ws, { type: 'file:saved', path });
+  } catch (error) {
+    console.error(`❌ Failed to write file: ${path}`, error);
+    send(ws, { type: 'file:error', path, error: `Failed to save file: ${path}` });
+  }
+}
+
 async function handleFileList(ws: ServerWebSocket<WSData>, path: string) {
   try {
     const tree = await getFileTree(path);
@@ -294,8 +424,12 @@ async function handleSessionList(ws: ServerWebSocket<WSData>) {
 
   try {
     const sessions = await listSessions(ws.data.workingDirectory);
-    send(ws, { type: 'session:list', sessions });
-    console.log(`📋 Sent ${sessions.length} sessions for ${ws.data.workingDirectory}`);
+    // Trim to max sessions limit (sorted by modified date descending)
+    const trimmedSessions = sessions.length > MAX_SESSIONS_PER_PROJECT
+      ? sessions.slice(0, MAX_SESSIONS_PER_PROJECT)
+      : sessions;
+    send(ws, { type: 'session:list', sessions: trimmedSessions });
+    console.log(`📋 Sent ${trimmedSessions.length}/${sessions.length} sessions for ${ws.data.workingDirectory}`);
   } catch (error) {
     console.error('Failed to list sessions:', error);
     send(ws, { type: 'session:list', sessions: [] });
@@ -327,12 +461,22 @@ async function handleSessionSwitch(ws: ServerWebSocket<WSData>, sessionId: strin
 
   // Refresh and send session list
   const sessions = await listSessions(ws.data.workingDirectory);
-  send(ws, { type: 'session:list', sessions });
+  const trimmedSessions = sessions.length > MAX_SESSIONS_PER_PROJECT
+    ? sessions.slice(0, MAX_SESSIONS_PER_PROJECT)
+    : sessions;
+  send(ws, { type: 'session:list', sessions: trimmedSessions });
+  console.log(`🔄 Refreshed session list after switch (${trimmedSessions.length}/${sessions.length} sessions)`);
 
   // Find and send current session
   const currentSession = sessions.find((s) => s.id === sessionId);
   if (currentSession) {
+    // Attach last used profile if exists
+    const lastProfile = sessionLastProfile.get(sessionId);
+    if (lastProfile) {
+      currentSession.lastUsedProfile = lastProfile;
+    }
     send(ws, { type: 'session:current', session: currentSession });
+    console.log(`📋 Sent current session${lastProfile ? ` (profile: ${lastProfile})` : ''}`);
   }
 
   // Load and send session messages
@@ -432,6 +576,148 @@ function handleTerminalClose(ws: ServerWebSocket<WSData>, id: string) {
   closeTerminal(id);
   send(ws, { type: 'terminal:closed', id });
   console.log(`🖥️ Terminal closed: ${id}`);
+}
+
+function handleTerminalReconnect(ws: ServerWebSocket<WSData>) {
+  // Find any previous connection that has terminals and swap the WS reference
+  // The new WS is `ws`; we look for terminals not owned by it
+  for (const conn of activeConnections) {
+    if (conn !== ws) {
+      const sessions = listTerminals(conn);
+      if (sessions.length > 0) {
+        reconnectTerminal(conn, ws);
+        console.log(`🔄 Reconnected ${sessions.length} terminals to new WebSocket`);
+        break;
+      }
+    }
+  }
+  const sessions = listTerminals(ws);
+  send(ws, { type: 'terminal:sessions', sessions });
+}
+
+async function handleBrowseList(ws: ServerWebSocket<WSData>, dirPath: string) {
+  try {
+    const { readdir, stat } = await import('fs/promises');
+    const { join } = await import('path');
+    const entries: { name: string; path: string; isDirectory: boolean; isGitRepo?: boolean }[] = [];
+
+    // Add parent entry (go up)
+    const parentPath = join(dirPath, '..');
+    if (parentPath !== dirPath) {
+      entries.push({ name: '..', path: parentPath, isDirectory: true });
+    }
+
+    const items = await readdir(dirPath, { withFileTypes: true });
+    for (const item of items) {
+      // Skip hidden files except common dev folders
+      if (item.name.startsWith('.') && item.name !== '.git') continue;
+      if (!item.isDirectory()) continue;
+      if (item.name === 'node_modules' || item.name === '.git') continue;
+
+      const fullPath = join(dirPath, item.name);
+      // Check if it's a git repo
+      let isGitRepo = false;
+      try {
+        await stat(join(fullPath, '.git'));
+        isGitRepo = true;
+      } catch { /* not a git repo */ }
+
+      entries.push({ name: item.name, path: fullPath, isDirectory: true, isGitRepo });
+    }
+
+    // Sort: git repos first, then alphabetical
+    entries.sort((a, b) => {
+      if (a.name === '..') return -1;
+      if (b.name === '..') return 1;
+      if (a.isGitRepo && !b.isGitRepo) return -1;
+      if (!a.isGitRepo && b.isGitRepo) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    send(ws, { type: 'browse:list', path: dirPath, entries });
+  } catch {
+    send(ws, { type: 'browse:list', path: dirPath, entries: [] });
+  }
+}
+
+async function handleProfilesList(ws: ServerWebSocket<WSData>) {
+  try {
+    const profiles = await listSettingsProfiles();
+    send(ws, { type: 'profiles:list', profiles });
+  } catch {
+    send(ws, { type: 'profiles:list', profiles: [{ name: 'Default', path: '', provider: 'Anthropic' }] });
+  }
+}
+
+async function handleSettingsGet(ws: ServerWebSocket<WSData>) {
+  try {
+    // If no current session, find the most recent one for usage data
+    let sessionIdForUsage = ws.data.currentSessionId;
+    if (!sessionIdForUsage && ws.data.workingDirectory) {
+      const allSessions = await listSessions(ws.data.workingDirectory);
+      if (allSessions.length > 0) {
+        sessionIdForUsage = allSessions[0].id; // sorted by modified desc
+      }
+    }
+
+    const [providerInfo, mcpServers, claudeConfig, sessionInfo, usageQuota] = await Promise.all([
+      getProviderInfo(ws.data.workingDirectory || undefined),
+      getMcpServers(ws.data.workingDirectory || undefined),
+      getClaudeConfig(),
+      ws.data.workingDirectory && sessionIdForUsage
+        ? getSessionInfo(ws.data.workingDirectory, sessionIdForUsage)
+        : Promise.resolve(null),
+      fetchUsageQuota(),
+    ]);
+
+    send(ws, {
+      type: 'settings:info',
+      provider: providerInfo.provider,
+      permissionMode: providerInfo.permissionMode,
+      model: sessionInfo?.model || providerInfo.model,
+      models: providerInfo.models,
+      mcpServers,
+      claudeConfig,
+      tokenUsage: sessionInfo?.usage || null,
+      costInfo: providerInfo.costInfo || null,
+      rateLimits: providerInfo.rateLimits || {},
+      accountInfo: providerInfo.accountInfo || null,
+      usageQuota: usageQuota || null,
+      maxMessagesPerSession: 50,
+      maxSessionsPerProject: 15,
+    } as any);
+    console.log(`⚙️ Sent settings info (${mcpServers.length} MCP servers, provider: ${providerInfo.provider})`);
+  } catch (error) {
+    console.error('Failed to get settings:', error);
+    send(ws, { type: 'message:error', error: 'Failed to get settings', id: '' });
+  }
+}
+
+// Models are loaded via piggyback on first user query — no separate preload needed
+
+async function handleSessionDelete(ws: ServerWebSocket<WSData>, sessionId: string) {
+  if (!ws.data.workingDirectory) return;
+  const ok = await deleteSession(ws.data.workingDirectory, sessionId);
+  if (ok) {
+    // If deleting current session, clear it
+    if (ws.data.currentSessionId === sessionId) {
+      ws.data.currentSessionId = null;
+      send(ws, { type: 'session:current', session: null });
+    }
+    // Refresh session list
+    const sessions = await listSessions(ws.data.workingDirectory);
+    const trimmedSessions = sessions.length > MAX_SESSIONS_PER_PROJECT
+      ? sessions.slice(0, MAX_SESSIONS_PER_PROJECT)
+      : sessions;
+    send(ws, { type: 'session:list', sessions: trimmedSessions });
+    console.log(`🗑️ Session deleted, refreshed list (${trimmedSessions.length}/${sessions.length} sessions)`);
+  }
+}
+
+function handleModelSet(ws: ServerWebSocket<WSData>, model: string) {
+  // Store on the connection so next query uses it
+  (ws.data as any).selectedModel = model;
+  console.log(`🔄 Model set to: ${model}`);
 }
 
 function send(ws: ServerWebSocket<WSData>, event: WSServerEvent) {

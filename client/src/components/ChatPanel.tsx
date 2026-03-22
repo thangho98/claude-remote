@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback, memo } from "react";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 import { formatRelativeTime, truncatePrompt } from "../utils/format";
-import type { Message, TokenUsage, Session, SlashCommand } from "@shared/types";
+import type { Message, TokenUsage, Session, SlashCommand, SettingsProfile } from "@shared/types";
 
 interface ChatPanelProps {
   messages: Message[];
@@ -19,6 +19,14 @@ interface ChatPanelProps {
   showSessionSelector?: boolean;
   // Slash commands
   commands?: SlashCommand[];
+  // Model selection
+  models?: { value: string; displayName: string; description: string }[];
+  currentModel?: string;
+  onModelChange?: (model: string) => void;
+  // Settings profiles
+  profiles?: SettingsProfile[];
+  currentProfile?: SettingsProfile | null;
+  onProfileChange?: (profile: SettingsProfile) => void;
 }
 
 // Session selector modal for mobile
@@ -54,23 +62,28 @@ const SessionModal = memo(function SessionModal({
 
       {/* Modal */}
       <div
-        className="relative w-full max-h-[70vh] bg-gray-800 rounded-t-2xl overflow-hidden animate-slide-up"
+        className="relative w-full max-h-[70vh] rounded-t-2xl overflow-hidden animate-slide-up"
+        style={{ backgroundColor: "var(--bg-secondary)" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Handle bar */}
         <div className="flex justify-center py-2">
-          <div className="w-10 h-1 bg-gray-600 rounded-full" />
+          <div className="w-10 h-1 rounded-full" style={{ backgroundColor: "var(--border-primary)" }} />
         </div>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-4 pb-3 border-b border-gray-700">
-          <h2 className="text-lg font-semibold text-white">Sessions</h2>
+        <div
+          className="flex items-center justify-between px-4 pb-3 border-b"
+          style={{ borderColor: "var(--border-primary)" }}
+        >
+          <h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>Sessions</h2>
           <button
             onClick={() => {
               onNewSession();
               onClose();
             }}
-            className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 rounded-lg text-sm text-white font-medium transition-colors"
+            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            style={{ backgroundColor: "var(--accent)", color: "var(--text-primary)" }}
           >
             + New
           </button>
@@ -79,12 +92,12 @@ const SessionModal = memo(function SessionModal({
         {/* Session list */}
         <div className="overflow-y-auto max-h-[calc(70vh-100px)]">
           {sessions.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
+            <div className="p-8 text-center" style={{ color: "var(--text-muted)" }}>
               <p>No sessions yet</p>
               <p className="text-sm mt-1">Start a new conversation</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-700">
+            <div className="divide-y" style={{ borderColor: "var(--border-primary)" }}>
               {sessions.map((session) => (
                 <button
                   key={session.id}
@@ -94,21 +107,26 @@ const SessionModal = memo(function SessionModal({
                   }}
                   className={`w-full px-4 py-3 text-left transition-colors ${
                     currentSession?.id === session.id
-                      ? "bg-orange-600/20 border-l-2 border-orange-500"
-                      : "hover:bg-gray-700/50"
+                      ? "border-l-2"
+                      : ""
                   }`}
+                  style={
+                    currentSession?.id === session.id
+                      ? { backgroundColor: "color-mix(in srgb, var(--accent) 20%, transparent)", borderColor: "var(--accent)" }
+                      : {}
+                  }
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-white font-medium truncate">
+                      <p className="font-medium truncate" style={{ color: "var(--text-primary)" }}>
                         {truncatePrompt(session.title, 60)}
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
                         {formatRelativeTime(session.modified)}
                       </p>
                     </div>
                     {currentSession?.id === session.id && (
-                      <span className="shrink-0 w-2 h-2 mt-2 bg-orange-500 rounded-full" />
+                      <span className="shrink-0 w-2 h-2 mt-2 rounded-full" style={{ backgroundColor: "var(--accent)" }} />
                     )}
                   </div>
                 </button>
@@ -118,7 +136,7 @@ const SessionModal = memo(function SessionModal({
         </div>
 
         {/* Safe area padding for bottom */}
-        <div className="pb-safe bg-gray-800" />
+        <div className="pb-safe" style={{ backgroundColor: "var(--bg-secondary)" }} />
       </div>
     </div>
   );
@@ -137,16 +155,21 @@ export function ChatPanel({
   onNewSession,
   showSessionSelector,
   commands,
+  models,
+  currentModel,
+  onModelChange,
+  profiles,
+  currentProfile,
+  onProfileChange,
 }: ChatPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showSessionModal, setShowSessionModal] = useState(false);
   const closeSessionModal = useCallback(() => setShowSessionModal(false), []);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom when new messages arrive or thinking starts
   useEffect(() => {
     const container = containerRef.current;
     if (container) {
-      // Use requestAnimationFrame to ensure DOM is updated before scrolling
       requestAnimationFrame(() => {
         container.scrollTo({
           top: container.scrollHeight,
@@ -154,18 +177,23 @@ export function ChatPanel({
         });
       });
     }
-  }, [messages]);
+  }, [messages, isThinking]);
 
   return (
-    <div className="flex flex-col h-full bg-gray-900">
+    <div className="flex flex-col h-full" style={{ backgroundColor: "var(--bg-primary)" }}>
       {/* Session selector bar for mobile */}
       {showSessionSelector && sessions && onSessionSelect && onNewSession && (
         <button
           onClick={() => setShowSessionModal(true)}
-          className="px-3 py-2.5 border-b border-gray-700 bg-gray-800/50 flex items-center gap-2 w-full text-left active:bg-gray-700/50 transition-colors"
+          className="px-3 py-2.5 border-b flex items-center gap-2 w-full text-left transition-colors"
+          style={{
+            borderColor: "var(--border-primary)",
+            backgroundColor: "color-mix(in srgb, var(--bg-secondary) 50%, transparent)",
+          }}
         >
           <svg
-            className="w-4 h-4 text-gray-400 shrink-0"
+            className="w-4 h-4 shrink-0"
+            style={{ color: "var(--text-tertiary)" }}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -177,13 +205,14 @@ export function ChatPanel({
               d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
             />
           </svg>
-          <span className="flex-1 text-gray-200 truncate">
+          <span className="flex-1 truncate" style={{ color: "var(--text-secondary)" }}>
             {currentSession
               ? truncatePrompt(currentSession.title, 40)
               : "Select a session..."}
           </span>
           <svg
-            className="w-4 h-4 text-gray-500 shrink-0"
+            className="w-4 h-4 shrink-0"
+            style={{ color: "var(--text-muted)" }}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -213,7 +242,7 @@ export function ChatPanel({
       <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
         {messages.length === 0 ? (
           <div className="h-full flex items-center justify-center">
-            <div className="text-center text-gray-500">
+            <div className="text-center" style={{ color: "var(--text-muted)" }}>
               <svg
                 className="w-12 h-12 mx-auto mb-3 opacity-50"
                 fill="none"
@@ -236,13 +265,19 @@ export function ChatPanel({
 
         {/* Thinking indicator */}
         {isThinking && (
-          <div className="flex items-center gap-3 px-4 py-3 bg-gray-800/50 border-t border-gray-700">
+          <div
+            className="flex items-center gap-3 px-4 py-3 border-t"
+            style={{
+              backgroundColor: "color-mix(in srgb, var(--bg-secondary) 50%, transparent)",
+              borderColor: "var(--border-primary)",
+            }}
+          >
             <div className="flex gap-1">
-              <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-              <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-              <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+              <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: "var(--accent)", animationDelay: "0ms" }} />
+              <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: "var(--accent)", animationDelay: "150ms" }} />
+              <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: "var(--accent)", animationDelay: "300ms" }} />
             </div>
-            <span className="text-sm text-gray-400">Claude is thinking...</span>
+            <span className="text-sm" style={{ color: "var(--text-tertiary)" }}>Claude is thinking...</span>
           </div>
         )}
       </div>
@@ -255,6 +290,12 @@ export function ChatPanel({
         currentFile={currentFile}
         tokenUsage={tokenUsage}
         commands={commands}
+        models={models}
+        currentModel={currentModel}
+        onModelChange={onModelChange}
+        profiles={profiles}
+        currentProfile={currentProfile}
+        onProfileChange={onProfileChange}
       />
     </div>
   );

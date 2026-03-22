@@ -12,23 +12,34 @@ export type WSClientEvent =
   | { type: 'commands:list' }
   | { type: 'git:status' }
   | { type: 'git:diff'; path: string; staged?: boolean }
+  | { type: 'file:write'; path: string; content: string }
   | { type: 'terminal:create'; id?: string; cols?: number; rows?: number }
   | { type: 'terminal:input'; id: string; data: string }
   | { type: 'terminal:resize'; id: string; cols: number; rows: number }
-  | { type: 'terminal:close'; id: string };
+  | { type: 'terminal:close'; id: string }
+  | { type: 'terminal:reconnect' }
+  | { type: 'tool:permission_response'; requestId: string; allowed: boolean; remember?: boolean }
+  | { type: 'model:set'; model: string }
+  | { type: 'session:delete'; sessionId: string }
+  | { type: 'settings:get' }
+  | { type: 'profiles:list' }
+  | { type: 'profile:set'; profilePath: string }
+  | { type: 'browse:list'; path: string };
 
 // WebSocket Events: Server → Client
 export type WSServerEvent =
   | { type: 'auth:success'; user: { authenticated: boolean } }
   | { type: 'auth:error'; message: string }
-  | { type: 'message:chunk'; content: string; id: string }
-  | { type: 'message:tool_use'; id: string; toolName: string; toolInput: string }
-  | { type: 'message:done'; id: string }
-  | { type: 'message:error'; error: string; id: string }
-  | { type: 'message:thinking'; isThinking: boolean }
-  | { type: 'message:thinking_content'; id: string; content: string }
+  | { type: 'message:chunk'; content: string; id: string; sessionId: string }
+  | { type: 'message:tool_use'; id: string; toolName: string; toolInput: string; sessionId: string }
+  | { type: 'message:done'; id: string; sessionId: string }
+  | { type: 'message:error'; error: string; id: string; sessionId?: string }
+  | { type: 'message:thinking'; isThinking: boolean; sessionId: string }
+  | { type: 'message:thinking_content'; id: string; content: string; sessionId: string }
   | { type: 'terminal:output'; content: string }
   | { type: 'file:content'; path: string; content: string }
+  | { type: 'file:saved'; path: string }
+  | { type: 'file:error'; path: string; error: string }
   | { type: 'file:tree'; path: string; tree: FileNode }
   | { type: 'project:list'; projects: Project[] }
   | { type: 'project:current'; project: Project }
@@ -37,9 +48,8 @@ export type WSServerEvent =
   | { type: 'session:info'; model: string; usage: TokenUsage }
   | { type: 'session:messages'; messages: Message[] }
   | { type: 'session:id'; sessionId: string }
-  | { type: 'session:id'; sessionId: string }
   | { type: 'commands:list'; commands: SlashCommand[] }
-  | { type: 'message:append'; message: Message } // For streaming updates that add a full message/block
+  | { type: 'message:append'; message: Message; sessionId: string } // For streaming updates that add a full message/block
   | { type: 'git:status'; status: GitStatusInfo }
   | { type: 'git:changes'; changes: GitChange[] }
   | { type: 'git:diff'; diff: GitDiffResult }
@@ -47,7 +57,28 @@ export type WSServerEvent =
   | { type: 'terminal:created'; session: TerminalSession }
   | { type: 'terminal:data'; id: string; data: string }
   | { type: 'terminal:closed'; id: string; exitCode?: number }
-  | { type: 'terminal:error'; id: string; error: string };
+  | { type: 'terminal:error'; id: string; error: string }
+  | { type: 'terminal:sessions'; sessions: TerminalSession[] }
+  | { type: 'terminal:buffer'; id: string; data: string }
+  | { type: 'tool:permission_request'; requestId: string; tool: string; input: Record<string, unknown>; sessionId: string }
+  | { type: 'settings:info'; provider: string; permissionMode: string; model: string; mcpServers: { name: string; type: string; status: string }[]; claudeConfig: Record<string, unknown>; tokenUsage: TokenUsage | null; maxMessagesPerSession: number; maxSessionsPerProject: number }
+  | { type: 'models:list'; models: { value: string; displayName: string; description: string }[] }
+  | { type: 'profiles:list'; profiles: SettingsProfile[] }
+  | { type: 'browse:list'; path: string; entries: BrowseEntry[] };
+
+export interface BrowseEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  isGitRepo?: boolean;
+}
+
+export interface SettingsProfile {
+  name: string;
+  path: string; // empty string = Default (no custom settings)
+  model?: string;
+  provider?: string;
+}
 
 // Domain Types
 export interface Project {
@@ -119,6 +150,7 @@ export interface Session {
   created: string;
   modified: string;
   model?: string;
+  lastUsedProfile?: string; // Last settings profile used in this session
 }
 
 export interface TokenUsage {
@@ -148,6 +180,7 @@ export interface SlashCommand {
   name: string;
   description: string;
   source: 'builtin' | 'project' | 'user';
+  kind: 'builtin' | 'command' | 'skill';
 }
 
 // --- Terminal Types ---

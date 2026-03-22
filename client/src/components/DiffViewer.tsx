@@ -25,16 +25,16 @@ export function DiffViewer({ diff, onClose }: DiffViewerProps) {
   }, [diff.hunks]);
 
   return (
-    <div className="flex flex-col h-full bg-[#1e1e1e]">
+    <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--editor-bg)' }}>
       {/* Tab Header */}
-      <div className="flex items-center justify-between bg-[#252526] border-b border-[#1e1e1e]">
-        <div className="flex items-center gap-2 px-3 py-2 bg-[#1e1e1e] border-t-2 border-[#d97757] min-w-0">
+      <div className="flex items-center justify-between border-b" style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border-primary)' }}>
+        <div className="flex items-center gap-2 px-3 py-2 border-t-2 min-w-0" style={{ backgroundColor: 'var(--editor-bg)', borderTopColor: 'var(--accent)' }}>
           <svg className="w-4 h-4 text-yellow-400 shrink-0" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
           </svg>
-          <span className="text-sm text-gray-300 truncate">{filename}</span>
-          <span className="text-xs text-gray-500">(diff)</span>
-          <button onClick={onClose} className="p-0.5 rounded hover:bg-gray-700 text-gray-500 hover:text-gray-300 shrink-0">
+          <span className="text-sm truncate" style={{ color: 'var(--text-secondary)' }}>{filename}</span>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>(diff)</span>
+          <button onClick={onClose} className="p-0.5 rounded hover:bg-gray-700 shrink-0" style={{ color: 'var(--text-muted)' }}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -45,17 +45,15 @@ export function DiffViewer({ diff, onClose }: DiffViewerProps) {
         <div className="flex items-center gap-1 px-3">
           <button
             onClick={() => setViewMode("unified")}
-            className={`px-2 py-1 text-xs rounded transition-colors ${
-              viewMode === "unified" ? "bg-[#3c3c3c] text-gray-200" : "text-gray-500 hover:text-gray-300"
-            }`}
+            className="px-2 py-1 text-xs rounded transition-colors"
+            style={viewMode === "unified" ? { backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' } : { color: 'var(--text-muted)' }}
           >
             Unified
           </button>
           <button
             onClick={() => setViewMode("split")}
-            className={`px-2 py-1 text-xs rounded transition-colors ${
-              viewMode === "split" ? "bg-[#3c3c3c] text-gray-200" : "text-gray-500 hover:text-gray-300"
-            }`}
+            className="px-2 py-1 text-xs rounded transition-colors"
+            style={viewMode === "split" ? { backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' } : { color: 'var(--text-muted)' }}
           >
             Split
           </button>
@@ -63,12 +61,12 @@ export function DiffViewer({ diff, onClose }: DiffViewerProps) {
       </div>
 
       {/* Breadcrumb */}
-      <div className="flex items-center gap-1 px-4 py-1 text-xs text-gray-500 bg-[#1e1e1e] border-b border-[#2d2d2d]">
+      <div className="flex items-center gap-1 px-4 py-1 text-xs border-b" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--editor-bg)', borderColor: 'var(--border-primary)' }}>
         {diff.path.split("/").map((part, i, arr) => (
           <span key={i} className="flex items-center">
             <span className="hover:text-gray-300 cursor-pointer">{part}</span>
             {i < arr.length - 1 && (
-              <svg className="w-3 h-3 mx-1 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 mx-1" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             )}
@@ -79,11 +77,11 @@ export function DiffViewer({ diff, onClose }: DiffViewerProps) {
       {/* Diff Content */}
       <div className="flex-1 overflow-auto font-mono text-xs leading-[1.6]">
         {diff.isBinary ? (
-          <div className="h-full flex items-center justify-center text-gray-500">
+          <div className="h-full flex items-center justify-center" style={{ color: 'var(--text-muted)' }}>
             <p>Binary file changed - cannot display diff</p>
           </div>
         ) : diff.hunks.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-gray-500">
+          <div className="h-full flex items-center justify-center" style={{ color: 'var(--text-muted)' }}>
             <p>No changes to display</p>
           </div>
         ) : viewMode === "unified" ? (
@@ -94,7 +92,7 @@ export function DiffViewer({ diff, onClose }: DiffViewerProps) {
       </div>
 
       {/* Status Bar */}
-      <div className="flex items-center justify-between px-3 py-1 text-xs bg-[#d97757] text-white shrink-0">
+      <div className="flex items-center justify-between px-3 py-1 text-xs text-white shrink-0" style={{ backgroundColor: 'var(--accent)' }}>
         <div className="flex items-center gap-4">
           <span>{ext}</span>
           <span>{diff.hunks.length} {diff.hunks.length === 1 ? "hunk" : "hunks"}</span>
@@ -120,7 +118,7 @@ function UnifiedView({ hunks }: { hunks: GitDiffHunk[] }) {
           style={{ contentVisibility: "auto", containIntrinsicSize: `auto ${hunk.lines.length * 1.6}em` }}
         >
           {/* Hunk header */}
-          <div className="px-4 py-1 bg-blue-900/10 text-blue-400 sticky top-0 border-y border-[#2d2d2d]">
+          <div className="px-4 py-1 bg-blue-900/10 text-blue-400 sticky top-0 border-y" style={{ borderColor: 'var(--border-primary)' }}>
             {hunk.header}
           </div>
           {/* Lines */}
@@ -138,9 +136,13 @@ function UnifiedLine({ line }: { line: GitDiffLine }) {
     line.type === "add" ? "bg-green-900/15" :
     line.type === "remove" ? "bg-red-900/15" : "";
 
+  const textStyle =
+    line.type === "add" ? { color: undefined } :
+    line.type === "remove" ? { color: undefined } : { color: 'var(--text-secondary)' };
+
   const textClass =
     line.type === "add" ? "text-green-400" :
-    line.type === "remove" ? "text-red-400" : "text-gray-300";
+    line.type === "remove" ? "text-red-400" : "";
 
   const prefix =
     line.type === "add" ? "+" :
@@ -149,15 +151,15 @@ function UnifiedLine({ line }: { line: GitDiffLine }) {
   return (
     <div className={`flex ${bgClass} hover:brightness-125`}>
       {/* Old line number */}
-      <span className="w-12 text-right pr-2 text-gray-600 select-none shrink-0 border-r border-[#2d2d2d]">
+      <span className="w-12 text-right pr-2 select-none shrink-0 border-r" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-primary)' }}>
         {line.oldLineNumber ?? ""}
       </span>
       {/* New line number */}
-      <span className="w-12 text-right pr-2 text-gray-600 select-none shrink-0 border-r border-[#2d2d2d]">
+      <span className="w-12 text-right pr-2 select-none shrink-0 border-r" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-primary)' }}>
         {line.newLineNumber ?? ""}
       </span>
       {/* Prefix + content */}
-      <span className={`pl-2 whitespace-pre ${textClass}`}>
+      <span className={`pl-2 whitespace-pre ${textClass}`} style={textStyle}>
         <span className="select-none">{prefix}</span>
         {line.content}
       </span>
@@ -209,7 +211,7 @@ function SplitView({ hunks }: { hunks: GitDiffHunk[] }) {
   return (
     <div className="flex h-full">
       {/* Left (old) */}
-      <div ref={leftRef} onScroll={handleLeftScroll} className="flex-1 overflow-auto border-r border-[#2d2d2d]">
+      <div ref={leftRef} onScroll={handleLeftScroll} className="flex-1 overflow-auto border-r" style={{ borderColor: 'var(--border-primary)' }}>
         {hunkGroups.map((group, gi) => (
           <div key={gi} style={{ contentVisibility: "auto", containIntrinsicSize: `auto ${group.length * 1.6}em` }}>
             {group.map((row, i) => (
@@ -296,7 +298,7 @@ function SplitLine({
 }) {
   if (isHunkHeader) {
     return (
-      <div className="px-2 py-1 bg-blue-900/10 text-blue-400 border-y border-[#2d2d2d] truncate">
+      <div className="px-2 py-1 bg-blue-900/10 text-blue-400 border-y truncate" style={{ borderColor: 'var(--border-primary)' }}>
         {headerText}
       </div>
     );
@@ -312,16 +314,20 @@ function SplitLine({
     line.type === "add" ? "bg-green-900/15" :
     line.type === "remove" ? "bg-red-900/15" : "";
 
+  const textStyle =
+    line.type === "add" ? { color: undefined } :
+    line.type === "remove" ? { color: undefined } : { color: 'var(--text-secondary)' };
+
   const textClass =
     line.type === "add" ? "text-green-400" :
-    line.type === "remove" ? "text-red-400" : "text-gray-300";
+    line.type === "remove" ? "text-red-400" : "";
 
   return (
     <div className={`flex ${bgClass} hover:brightness-125`}>
-      <span className="w-10 text-right pr-2 text-gray-600 select-none shrink-0 border-r border-[#2d2d2d]">
+      <span className="w-10 text-right pr-2 select-none shrink-0 border-r" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-primary)' }}>
         {lineNum ?? ""}
       </span>
-      <span className={`pl-2 whitespace-pre ${textClass}`}>{line.content}</span>
+      <span className={`pl-2 whitespace-pre ${textClass}`} style={textStyle}>{line.content}</span>
     </div>
   );
 }

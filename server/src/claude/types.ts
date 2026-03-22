@@ -12,8 +12,13 @@ export interface ClaudeMessageHandler {
   onThinking?: (isThinking: boolean) => void;
   onThinkingContent?: (content: string) => void;
   onSessionId?: (sessionId: string) => void;
-  // New handler for sending full message objects (for consistency with session history)
+  // Full message objects (for consistency with session history)
   onMessage?: (message: any) => void;
+  // Tool permission callback (SDK only)
+  onToolPermission?: (toolName: string, input: Record<string, unknown>, toolUseId: string) => Promise<{ allowed: boolean }>;
+  // Called when models/account info become available (piggyback on first query)
+  onModelsLoaded?: (models: { value: string; displayName: string; description: string }[]) => void;
+  onAccountInfoLoaded?: (info: { email?: string; subscriptionType?: string; apiProvider?: string }) => void;
 }
 
 export interface ClaudeQueryOptions {
@@ -21,6 +26,7 @@ export interface ClaudeQueryOptions {
   workingDirectory: string;
   sessionId?: string | null;
   model?: string;
+  settingsProfile?: string; // Path to settings file (e.g. ~/.claude/settings/alibaba.json)
   handlers: ClaudeMessageHandler;
 }
 

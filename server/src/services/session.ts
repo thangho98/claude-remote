@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "fs/promises";
+import { readdir, readFile, stat, unlink, rm } from "fs/promises";
 import { join } from "path";
 import type { Session, TokenUsage, ContentBlock } from "../../../shared/types";
 
@@ -158,36 +158,45 @@ export async function listSessions(projectPath: string): Promise<Session[]> {
   const sessions = await Promise.all(
     Array.from(allSessionIds).map(async (sessionId) => {
       const indexEntry = indexMap.get(sessionId);
-      const { firstPrompt: extractedFirst, lastMessage } = await getFirstAndLastMessage(
-        claudeFolderPath,
-        sessionId
-      );
 
-      // Get file stats for sessions not in index or to get accurate modified time
+      // Check if .jsonl file exists on disk
+      let fileExists = false;
+      let fileBirth: string | null = null;
+      let fileMod: string | null = null;
+      try {
+        const fileStat = await stat(join(claudeFolderPath, `${sessionId}.jsonl`));
+        fileExists = true;
+        fileBirth = fileStat.birthtime.toISOString();
+        fileMod = fileStat.mtime.toISOString();
+      } catch {
+        // File doesn't exist on disk
+      }
+
+      // Skip sessions that have no .jsonl AND no index entry
+      if (!fileExists && !indexEntry) {
+        return null;
+      }
+
+      const { firstPrompt: extractedFirst, lastMessage } = fileExists
+        ? await getFirstAndLastMessage(claudeFolderPath, sessionId)
+        : { firstPrompt: undefined, lastMessage: undefined };
+
+      // Get timestamps
       let created: string;
       let modified: string;
       let messageCount = 0;
 
-      if (indexEntry) {
+      if (fileExists) {
+        created = fileBirth!;
+        modified = fileMod!;
+        messageCount = indexEntry?.messageCount || 0;
+      } else if (indexEntry) {
+        // File deleted but index has metadata — show as historical
         created = indexEntry.created;
+        modified = indexEntry.modified;
         messageCount = indexEntry.messageCount || 0;
-        // Use file mtime for more accurate modified time
-        try {
-          const fileStat = await stat(join(claudeFolderPath, `${sessionId}.jsonl`));
-          modified = fileStat.mtime.toISOString();
-        } catch {
-          modified = indexEntry.modified;
-        }
       } else {
-        // Session not in index - get times from file
-        try {
-          const fileStat = await stat(join(claudeFolderPath, `${sessionId}.jsonl`));
-          created = fileStat.birthtime.toISOString();
-          modified = fileStat.mtime.toISOString();
-        } catch {
-          // File doesn't exist
-          return null;
-        }
+        return null;
       }
 
       // Use extracted first prompt if index has bad value
@@ -343,5 +352,27 @@ export async function getSessionMessages(
     }
     console.warn(`Failed to read session messages ${sessionId}:`, error);
     return [];
+  }
+}
+
+export async function deleteSession(projectPath: string, sessionId: string): Promise<boolean> {
+  if (!CLAUDE_PROJECTS_DIR) return false;
+
+  const claudeFolderName = getClaudeFolderName(projectPath);
+  const claudeFolderPath = join(CLAUDE_PROJECTS_DIR, claudeFolderName);
+
+  try {
+    // Delete .jsonl file
+    const sessionFile = join(claudeFolderPath, `${sessionId}.jsonl`);
+    await unlink(sessionFile).catch(() => {});
+
+    // Delete session folder (subagents, tool-results, etc.)
+    const sessionDir = join(claudeFolderPath, sessionId);
+    await rm(sessionDir, { recursive: true, force: true }).catch(() => {});
+
+    console.log(`🗑️ Deleted session ${sessionId}`);
+    return true;
+  } catch {
+    return false;
   }
 }

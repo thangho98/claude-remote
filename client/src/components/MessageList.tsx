@@ -79,16 +79,20 @@ const ContentModal = memo(function ContentModal({
   return (
     <div className="fixed inset-0 z-100 bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className={`relative max-w-4xl w-full max-h-[85vh] rounded-xl border overflow-hidden ${
-          isError ? 'bg-gray-900 border-red-700' : 'bg-gray-900 border-gray-700'
-        }`}
+        className="relative max-w-4xl w-full max-h-[85vh] rounded-xl border overflow-hidden"
+        style={{
+          backgroundColor: "var(--bg-primary)",
+          borderColor: isError ? "var(--border-primary)" : "var(--border-primary)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
-          className={`flex items-center justify-between px-4 py-3 border-b ${
-            isError ? 'border-red-700 bg-red-900/30' : 'border-gray-700 bg-gray-800'
-          }`}
+          className="flex items-center justify-between px-4 py-3 border-b"
+          style={{
+            borderColor: isError ? undefined : "var(--border-primary)",
+            backgroundColor: isError ? "rgba(127, 29, 29, 0.3)" : "var(--bg-secondary)",
+          }}
         >
           <div className="flex items-center gap-2">
             {isError ? (
@@ -101,7 +105,7 @@ const ContentModal = memo(function ContentModal({
                 />
               </svg>
             ) : (
-              <svg className="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" style={{ color: "var(--accent)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -116,11 +120,12 @@ const ContentModal = memo(function ContentModal({
                 />
               </svg>
             )}
-            <span className={`font-medium ${isError ? 'text-red-400' : 'text-orange-400'}`}>{title}</span>
+            <span className="font-medium" style={{ color: isError ? undefined : "var(--accent)" }}>{title}</span>
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-white transition-colors rounded"
+            className="p-1 transition-colors rounded"
+            style={{ color: "var(--text-tertiary)" }}
             aria-label="Close"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -130,10 +135,10 @@ const ContentModal = memo(function ContentModal({
         </div>
         {/* Content */}
         <div className="overflow-auto max-h-[calc(85vh-56px)] p-4">
-          <pre className="text-sm text-gray-300 whitespace-pre-wrap break-all font-mono">{content}</pre>
+          <pre className="text-sm whitespace-pre-wrap break-all font-mono" style={{ color: "var(--text-secondary)" }}>{content}</pre>
         </div>
         {/* Footer hint */}
-        <div className="absolute bottom-6 right-6 text-xs text-gray-500">Press Esc to close</div>
+        <div className="absolute bottom-6 right-6 text-xs" style={{ color: "var(--text-muted)" }}>Press Esc to close</div>
       </div>
     </div>
   );
@@ -240,9 +245,10 @@ const ThinkingDisplay = memo(function ThinkingDisplay({ thinking }: { thinking: 
     <div className="my-2">
       <button
         onClick={toggleExpanded}
-        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+        className="flex items-center gap-1.5 text-xs transition-colors"
+        style={{ color: "var(--text-tertiary)" }}
       >
-        <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />
+        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
         <span className="font-medium">Thinking</span>
         <svg
           className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -254,11 +260,11 @@ const ThinkingDisplay = memo(function ThinkingDisplay({ thinking }: { thinking: 
         </svg>
       </button>
       {isExpanded ? (
-        <div className="mt-2 pl-3 border-l-2 border-gray-600 text-xs text-gray-400 whitespace-pre-wrap">
+        <div className="mt-2 pl-3 border-l-2 text-xs whitespace-pre-wrap" style={{ borderColor: "var(--border-primary)", color: "var(--text-tertiary)" }}>
           {thinking.thinking}
         </div>
       ) : (
-        <div className="mt-1 pl-3 text-xs text-gray-500 truncate">{previewText}</div>
+        <div className="mt-1 pl-3 text-xs truncate" style={{ color: "var(--text-muted)" }}>{previewText}</div>
       )}
     </div>
   );
@@ -284,7 +290,8 @@ const ImageDisplay = memo(function ImageDisplay({
       <img
         src={src}
         alt="Attached image"
-        className="max-w-full rounded-lg border border-gray-600 max-h-[400px] object-contain cursor-zoom-in hover:opacity-90 transition-opacity"
+        className="max-w-full rounded-lg border max-h-[400px] object-contain cursor-zoom-in hover:opacity-90 transition-opacity"
+        style={{ borderColor: "var(--border-primary)" }}
         loading="lazy"
         onClick={handleClick}
       />
@@ -312,10 +319,14 @@ const ToolUseDisplay = memo(function ToolUseDisplay({ tool }: { tool: ToolUseBlo
   return (
     <>
       <div
-        className={`my-2 bg-gray-700/50 rounded-lg p-2 border border-gray-600 ${isTruncated ? 'cursor-pointer hover:bg-gray-700/70 transition-colors' : ''}`}
+        className={`my-2 rounded-lg p-2 border ${isTruncated ? 'cursor-pointer transition-colors' : ''}`}
+        style={{
+          backgroundColor: "color-mix(in srgb, var(--bg-tertiary) 50%, transparent)",
+          borderColor: "var(--border-primary)",
+        }}
         onClick={handleClick}
       >
-        <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
+        <div className="flex items-center gap-2 text-xs mb-1" style={{ color: "var(--text-tertiary)" }}>
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
@@ -330,11 +341,11 @@ const ToolUseDisplay = memo(function ToolUseDisplay({ tool }: { tool: ToolUseBlo
               d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
             />
           </svg>
-          <span className="font-medium text-orange-400">{tool.name}</span>
-          {isTruncated && <span className="text-gray-500 text-[10px] ml-auto">Click to expand</span>}
+          <span className="font-medium" style={{ color: "var(--accent)" }}>{tool.name}</span>
+          {isTruncated && <span className="text-[10px] ml-auto" style={{ color: "var(--text-muted)" }}>Click to expand</span>}
         </div>
         {displayInput && (
-          <pre className="text-xs text-gray-300 overflow-x-auto whitespace-pre-wrap break-all">
+          <pre className="text-xs overflow-x-auto whitespace-pre-wrap break-all" style={{ color: "var(--text-secondary)" }}>
             {displayInput}
           </pre>
         )}
@@ -431,7 +442,7 @@ const ToolResultDisplay = memo(function ToolResultDisplay({
               <span className="text-green-400 font-medium">Result</span>
             </>
           )}
-          {isTruncated && <span className="text-gray-500 text-[10px] ml-auto">Click to expand</span>}
+          {isTruncated && <span className="text-[10px] ml-auto" style={{ color: "var(--text-muted)" }}>Click to expand</span>}
         </div>
         {/* Render images from tool result */}
         {images.length > 0 && (
@@ -442,7 +453,7 @@ const ToolResultDisplay = memo(function ToolResultDisplay({
           </div>
         )}
         {displayContent && (
-          <pre className="text-xs text-gray-300 overflow-x-auto whitespace-pre-wrap break-all">
+          <pre className="text-xs overflow-x-auto whitespace-pre-wrap break-all" style={{ color: "var(--text-secondary)" }}>
             {displayContent}
           </pre>
         )}
@@ -462,15 +473,21 @@ const ToolResultDisplay = memo(function ToolResultDisplay({
 // Command Display Component - memoized
 const CommandDisplay = memo(function CommandDisplay({ command, name }: { command: string; name?: string }) {
   return (
-    <div className="flex flex-col gap-1 my-2 bg-gray-900/50 rounded-lg p-3 border border-gray-700/50">
+    <div
+      className="flex flex-col gap-1 my-2 rounded-lg p-3 border"
+      style={{
+        backgroundColor: "color-mix(in srgb, var(--bg-primary) 50%, transparent)",
+        borderColor: "color-mix(in srgb, var(--border-primary) 50%, transparent)",
+      }}
+    >
       <div className="flex items-center gap-2 text-xs font-medium text-emerald-400">
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
         <span>Workflow Command</span>
       </div>
-      <div className="font-mono text-sm text-gray-200">{name || command}</div>
-      {name && name !== command && <div className="text-xs text-gray-500 font-mono">Action: {command}</div>}
+      <div className="font-mono text-sm" style={{ color: "var(--text-secondary)" }}>{name || command}</div>
+      {name && name !== command && <div className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>Action: {command}</div>}
     </div>
   );
 });
@@ -653,11 +670,18 @@ const MessageItem = memo(function MessageItem({ message, onImageClick }: Message
       <div
         className={`max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-3 relative group ${
           isUserMessage
-            ? 'bg-orange-600 text-white rounded-br-md'
+            ? 'rounded-br-md'
             : isToolResultOnly
-              ? 'bg-gray-800/50 text-gray-100 rounded-bl-md border border-gray-700'
-              : 'bg-gray-800 text-gray-100 rounded-bl-md'
+              ? 'rounded-bl-md border'
+              : 'rounded-bl-md'
         }`}
+        style={
+          isUserMessage
+            ? { backgroundColor: "var(--accent)", color: "var(--text-primary)" }
+            : isToolResultOnly
+              ? { backgroundColor: "color-mix(in srgb, var(--bg-secondary) 50%, transparent)", color: "var(--text-secondary)", borderColor: "var(--border-primary)" }
+              : { backgroundColor: "var(--bg-secondary)", color: "var(--text-secondary)" }
+        }
       >
         {thinkingBlocks.length > 0 && (
           <div className="mb-2">
@@ -684,12 +708,12 @@ const MessageItem = memo(function MessageItem({ message, onImageClick }: Message
                 remarkPlugins={[remarkGfm]}
                 components={{
                   pre: ({ children }) => (
-                    <pre className="bg-gray-900 rounded-lg p-3 overflow-x-auto text-sm">{children}</pre>
+                    <pre className="rounded-lg p-3 overflow-x-auto text-sm" style={{ backgroundColor: "var(--bg-primary)" }}>{children}</pre>
                   ),
                   code: ({ className, children, ...props }) => {
                     const isInline = !className;
                     return isInline ? (
-                      <code className="bg-gray-700 px-1.5 py-0.5 rounded-sm text-sm" {...props}>
+                      <code className="px-1.5 py-0.5 rounded-sm text-sm" style={{ backgroundColor: "var(--bg-tertiary)" }} {...props}>
                         {children}
                       </code>
                     ) : (
@@ -724,7 +748,7 @@ const MessageItem = memo(function MessageItem({ message, onImageClick }: Message
         )}
 
         {message.isStreaming && (
-          <span className="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-1 rounded-sm" />
+          <span className="inline-block w-2 h-4 animate-pulse ml-1 rounded-sm" style={{ backgroundColor: "var(--text-tertiary)" }} />
         )}
 
         {textContent && (
@@ -769,7 +793,7 @@ export function MessageList({ messages }: MessageListProps) {
 
   if (messages.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-500">
+      <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-muted)" }}>
         <div className="text-center">
           <svg
             className="w-16 h-16 mx-auto mb-4 opacity-50"

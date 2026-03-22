@@ -3,6 +3,7 @@ import type { MutableRefObject } from 'react';
 import { v7 as uuidv7 } from 'uuid';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useIsDesktop } from './hooks/useIsDesktop';
+import { useNotifications } from './hooks/useNotifications';
 import {
   useAppStore,
   useAuthStore,
@@ -16,17 +17,25 @@ import {
   useUIStore,
   useGitStore,
   useBottomPanelStore,
+  useSettingsStore,
 } from './stores/appStore';
 import { writeTerminalData } from './lib/terminalRegistry';
 import { AuthScreen } from './components/AuthScreen';
 import { Layout } from './components/Layout';
 import { ChatPanel } from './components/ChatPanel';
 import { FileExplorer } from './components/FileExplorer';
-import { FileViewer } from './components/FileViewer';
+const FileViewer = lazy(() =>
+  import('./components/FileViewer').then((m) => ({ default: m.FileViewer })),
+);
 import { TerminalPanel } from './components/TerminalPanel';
 import { SessionPanel } from './components/SessionPanel';
 import type { WSServerEvent, Message, Session } from '@shared/types';
+import { ToolPermissionModal } from './components/ToolPermissionModal';
+import type { ToolPermissionRequest } from './components/ToolPermissionModal';
 
+const SettingsPanel = lazy(() =>
+  import('./components/SettingsPanel').then((m) => ({ default: m.SettingsPanel })),
+);
 const SourceControlPanel = lazy(() =>
   import('./components/SourceControlPanel').then((m) => ({ default: m.SourceControlPanel })),
 );
@@ -37,19 +46,27 @@ const DiffViewer = lazy(() =>
 function App() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pendingPermissions, setPendingPermissions] = useState<ToolPermissionRequest[]>([]);
 
   const { token, setToken, authenticated, logout } = useAuthStore();
   const { isConnected, setConnected } = useConnectionStore();
   const { projects, currentProject, setCurrentProject } = useProjectStore();
   const { fileTree, selectedFile, setSelectedFile } = useFileStore();
-  const { messages, addMessage, clearMessages } = useMessageStore();
+  const { messages, addMessageToSession, clearAllMessages, clearMessagesForSession } = useMessageStore();
   const { isLoading, setLoading, isThinking } = useLoadingStore();
   const { sessions, currentSession, setCurrentSession, setCurrentModel, tokenUsage, setTokenUsage } = useSessionStore();
-  const { activeTab, setActiveTab, commands } = useUIStore();
+  const { activeTab, setActiveTab, commands, models, profiles, currentProfile, setCurrentProfile } = useUIStore();
   const { gitStatus, gitChanges, selectedDiff, setSelectedDiff } = useGitStore();
   const { bottomPanelTab, setBottomPanelTab } = useBottomPanelStore();
+  const { settings } = useSettingsStore();
   const { terminalSessions, activeTerminalId, setActiveTerminalId } = useTerminalSessionStore();
   const isDesktop = useIsDesktop();
+  const { notify, requestPermission, permission, isSupported } = useNotifications();
+
+  // Store notify in a ref so the handler always has the latest version
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
 
   // Handle incoming WebSocket messages
   // Note: Using ref pattern to avoid stale closures - handlerRef is updated on every render
@@ -64,13 +81,16 @@ function App() {
   handlerRef.current = (event: WSServerEvent) => {
     // Use getState() directly for fresh state - no stale closures
     const store = useAppStore.getState();
-    const currentMessages = store.messages;
 
     switch (event.type) {
       case 'auth:success':
         store.setAuthenticated(true);
         setAuthError(null);
         setIsConnecting(false);
+        // Request notification permission after successful auth
+        if (isSupported && permission === 'default') {
+          requestPermission();
+        }
         break;
 
       case 'auth:error':
@@ -95,14 +115,31 @@ function App() {
         store.setSelectedFile({ path: event.path, content: event.content });
         break;
 
-      case 'message:append':
-        store.upsertMessage(event.message);
+      case 'file:saved':
+        // Update the stored content to match saved version
+        console.log(`💾 File saved: ${event.path}`);
         break;
 
+      case 'file:error':
+        console.error(`❌ File error: ${event.path} - ${event.error}`);
+        break;
+
+      case 'message:append': {
+        // Only add if for current session
+        const appendSessionId = (event as any).sessionId || store.currentSession?.id;
+        if (appendSessionId) {
+          store.upsertMessageInSession(appendSessionId, event.message);
+        }
+        break;
+      }
+
       case 'message:chunk': {
-        const existingMsg = currentMessages.find((m) => m.id === event.id);
+        const chunkSessionId = (event as any).sessionId || store.currentSession?.id;
+        if (!chunkSessionId) break;
+        const sessionMessages = store.messagesBySession[chunkSessionId] || [];
+        const existingMsg = sessionMessages.find((m) => m.id === event.id);
         if (!existingMsg) {
-          store.addMessage({
+          store.addMessageToSession(chunkSessionId, {
             id: event.id,
             role: 'assistant',
             content: event.content,
@@ -110,12 +147,14 @@ function App() {
             isStreaming: true,
           });
         } else {
-          store.updateMessage(event.id, event.content);
+          store.updateMessageInSession(chunkSessionId, event.id, event.content);
         }
         break;
       }
 
       case 'message:tool_use': {
+        const toolSessionId = (event as any).sessionId || store.currentSession?.id;
+        if (!toolSessionId) break;
         let parsedInput: Record<string, unknown> = {};
         if (typeof event.toolInput === 'string' && event.toolInput) {
           try {
@@ -125,9 +164,10 @@ function App() {
           }
         }
 
-        const existingMsg = currentMessages.find((m) => m.id === event.id);
+        const sessionMessages = store.messagesBySession[toolSessionId] || [];
+        const existingMsg = sessionMessages.find((m) => m.id === event.id);
         if (!existingMsg) {
-          store.addMessage({
+          store.addMessageToSession(toolSessionId, {
             id: event.id,
             role: 'assistant',
             content: [
@@ -142,36 +182,69 @@ function App() {
             isStreaming: true,
           });
         } else {
-          store.addToolUseToMessage(event.id, event.toolName, event.toolInput);
+          store.addToolUseToMessageInSession(toolSessionId, event.id, event.toolName, event.toolInput);
         }
         break;
       }
 
-      case 'message:done':
-        store.setMessageDone(event.id);
+      case 'message:done': {
+        const doneSessionId = (event as any).sessionId || store.currentSession?.id;
+        if (doneSessionId) {
+          store.setMessageDoneInSession(doneSessionId, event.id);
+        }
         store.setLoading(false);
         store.setThinking(false);
+        // Notify if user is on another tab/app
+        const sessionMessages = doneSessionId ? store.messagesBySession[doneSessionId] || [] : [];
+        const doneMsg = sessionMessages.find((m) => m.id === event.id);
+        let snippet = 'Task complete.';
+        if (doneMsg) {
+          const text = typeof doneMsg.content === 'string'
+            ? doneMsg.content
+            : doneMsg.content
+                ?.filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+                .map((b) => b.text)
+                .join(' ') ?? '';
+          if (text) {
+            snippet = text.length > 120 ? text.slice(0, 120) + '...' : text;
+          }
+        }
+        notifyRef.current('Claude finished', snippet);
         break;
+      }
 
-      case 'message:error':
+      case 'message:error': {
         store.setLoading(false);
         store.setThinking(false);
-        store.addMessage({
-          id: event.id || uuidv7(),
-          role: 'assistant',
-          content: `Error: ${event.error}`,
-          timestamp: new Date().toISOString(),
-        });
+        const errorSessionId = (event as any).sessionId || store.currentSession?.id;
+        if (errorSessionId) {
+          store.addMessageToSession(errorSessionId, {
+            id: event.id || uuidv7(),
+            role: 'assistant',
+            content: `Error: ${event.error}`,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        notifyRef.current('Claude error', event.error ?? 'An error occurred');
         break;
+      }
 
-      case 'message:thinking':
-        store.setThinking(event.isThinking);
+      case 'message:thinking': {
+        const thinkingSessionId = (event as any).sessionId || store.currentSession?.id;
+        // Only update thinking state if it's for the current session
+        if (thinkingSessionId === store.currentSession?.id) {
+          store.setThinking(event.isThinking);
+        }
         break;
+      }
 
       case 'message:thinking_content': {
-        const existingMsg = currentMessages.find((m) => m.id === event.id);
+        const thinkingContentSessionId = (event as any).sessionId || store.currentSession?.id;
+        if (!thinkingContentSessionId) break;
+        const tcSessionMessages = store.messagesBySession[thinkingContentSessionId] || [];
+        const existingMsg = tcSessionMessages.find((m) => m.id === event.id);
         if (!existingMsg) {
-          store.addMessage({
+          store.addMessageToSession(thinkingContentSessionId, {
             id: event.id,
             role: 'assistant',
             content: [{ type: 'thinking', thinking: event.content }],
@@ -179,7 +252,7 @@ function App() {
             isStreaming: true,
           });
         } else {
-          store.addThinkingToMessage(event.id, event.content);
+          store.addThinkingToMessageInSession(thinkingContentSessionId, event.id, event.content);
         }
         break;
       }
@@ -192,22 +265,51 @@ function App() {
         store.setSessions(event.sessions);
         break;
 
-      case 'session:current':
+      case 'session:current': {
         store.setCurrentSession(event.session);
+        // Auto-select last used profile if available
+        if (event.session?.lastUsedProfile) {
+          const profilePath = event.session.lastUsedProfile;
+          store.setCurrentProfile({ name: profilePath.split('/').pop() || profilePath, path: profilePath });
+          // Also notify server to set the profile
+          send({ type: 'profile:set', profilePath });
+          console.log(`⚙️ Auto-selected profile: ${profilePath}`);
+        }
         break;
+      }
 
       case 'session:info':
         store.setCurrentModel(event.model);
         store.setTokenUsage(event.usage);
         break;
 
-      case 'session:messages':
-        store.setMessages(event.messages);
+      case 'session:messages': {
+        // Set messages for the current session
+        const currentSessId = store.currentSession?.id;
+        if (currentSessId) {
+          store.setMessagesForSession(currentSessId, event.messages);
+        }
         break;
+      }
 
-      case 'session:id':
+      case 'session:id': {
         console.log(`📋 New session ID: ${event.sessionId}`);
+        // Create a new session object and set it as current
+        const newSession: Session = {
+          id: event.sessionId,
+          title: 'New session',
+          firstPrompt: '',
+          messageCount: 0,
+          created: new Date().toISOString(),
+          modified: new Date().toISOString(),
+        };
+        store.setCurrentSession(newSession);
+        // Add to sessions list if not already present
+        if (!store.sessions.some((s) => s.id === event.sessionId)) {
+          store.setSessions([newSession, ...store.sessions]);
+        }
         break;
+      }
 
       case 'commands:list':
         store.setCommands(event.commands);
@@ -241,7 +343,70 @@ function App() {
         store.removeTerminalSession(event.id);
         break;
 
+      case 'terminal:sessions':
+        // Restore terminal sessions after reconnect
+        for (const session of event.sessions) {
+          if (!store.terminalSessions.some((s) => s.id === session.id)) {
+            store.addTerminalSession(session);
+          }
+        }
+        break;
+
+      case 'terminal:buffer':
+        // Replay buffered output for reconnected terminal
+        writeTerminalData(event.id, event.data);
+        break;
+
       case 'terminal:error':
+        break;
+
+      case 'models:list':
+        store.setModels((event as any).models || []);
+        break;
+
+      case 'profiles:list':
+        store.setProfiles((event as any).profiles || []);
+        break;
+
+      case 'browse:list': {
+        const b = event as any;
+        setBrowseEntries(b.entries || []);
+        setBrowsePath(b.path || '');
+        break;
+      }
+
+      case 'settings:info': {
+        const e = event as any;
+        store.setSettings({
+          provider: e.provider,
+          permissionMode: e.permissionMode,
+          model: e.model,
+          models: e.models || [],
+          mcpServers: e.mcpServers,
+          claudeConfig: e.claudeConfig,
+          tokenUsage: e.tokenUsage,
+          costInfo: e.costInfo || null,
+          rateLimits: e.rateLimits || {},
+          accountInfo: e.accountInfo || null,
+          usageQuota: e.usageQuota || null,
+          maxMessagesPerSession: e.maxMessagesPerSession ?? 50,
+          maxSessionsPerProject: e.maxSessionsPerProject ?? 15,
+        });
+        // Also sync models to top-level store
+        if (e.models?.length) store.setModels(e.models);
+        break;
+      }
+
+      case 'tool:permission_request':
+        setPendingPermissions((prev) => [
+          ...prev,
+          {
+            requestId: event.requestId,
+            tool: event.tool,
+            input: event.input,
+            sessionId: event.sessionId,
+          },
+        ]);
         break;
     }
   };
@@ -304,15 +469,20 @@ function App() {
     setCurrentSession(null);
     setCurrentModel(null);
     setTokenUsage(null);
-    clearMessages();
+    clearAllMessages();
     send({ type: 'session:new' });
-  }, [setCurrentSession, setCurrentModel, setTokenUsage, clearMessages, send]);
+  }, [setCurrentSession, setCurrentModel, setTokenUsage, clearAllMessages, send]);
+
+  // Handle file save
+  const handleFileSave = useCallback((path: string, content: string) => {
+    send({ type: 'file:write', path, content });
+  }, [send]);
 
   // Handle file selection
   const handleFileSelect = useCallback((path: string) => {
     send({ type: 'file:read', path });
     if (window.innerWidth < 1024) {
-      setActiveTab('file');
+      setActiveTab('files');
     }
   }, [send, setActiveTab]);
 
@@ -322,7 +492,8 @@ function App() {
 
     if (!isConnected) {
       console.error('❌ Not connected to server');
-      addMessage({
+      const errorSessionId = currentSession?.id || 'default';
+      addMessageToSession(errorSessionId, {
         id: uuidv7(),
         role: 'assistant',
         content: 'Error: Not connected to server. Please refresh the page.',
@@ -331,27 +502,65 @@ function App() {
       return;
     }
 
+    // Add user message to current session
     const userMessage: Message = {
       id: uuidv7(),
       role: 'user',
       content,
       timestamp: new Date().toISOString(),
     };
-    addMessage(userMessage);
+    const targetSessionId = currentSession?.id || 'pending';
+    addMessageToSession(targetSessionId, userMessage);
     setLoading(true);
 
     const sent = send({ type: 'message', content });
     if (!sent) {
       console.error('❌ Failed to send message');
       setLoading(false);
-      addMessage({
+      addMessageToSession(targetSessionId, {
         id: uuidv7(),
         role: 'assistant',
         content: 'Error: Failed to send message. Please check your connection.',
         timestamp: new Date().toISOString(),
       });
     }
-  }, [isConnected, addMessage, setLoading, send]);
+  }, [isConnected, currentSession, addMessageToSession, setLoading, send]);
+
+  // Handle tool permission response
+  const handleToolPermissionResponse = useCallback((requestId: string, allowed: boolean, remember?: boolean) => {
+    send({ type: 'tool:permission_response', requestId, allowed, remember });
+    setPendingPermissions((prev) => prev.filter((r) => r.requestId !== requestId));
+  }, [send]);
+
+  // Selected model (local state, persists across renders)
+  const [selectedModel, setSelectedModel] = useState<string | undefined>();
+
+  // Handle model change
+  const handleModelChange = useCallback((model: string) => {
+    setSelectedModel(model);
+    send({ type: 'model:set', model } as any);
+  }, [send]);
+
+  // Handle profile change
+  const handleProfileChange = useCallback((profile: import('@shared/types').SettingsProfile) => {
+    setCurrentProfile(profile);
+    send({ type: 'profile:set', profilePath: profile.path } as any);
+  }, [send, setCurrentProfile]);
+
+  // Folder browser state
+  const [browseEntries, setBrowseEntries] = useState<import('@shared/types').BrowseEntry[]>([]);
+  const [browsePath, setBrowsePath] = useState<string>('');
+
+  const handleBrowseFolder = useCallback((path: string) => {
+    setBrowsePath(path);
+    send({ type: 'browse:list', path } as any);
+  }, [send]);
+
+  // Handle session delete
+  const handleDeleteSession = useCallback((sessionId: string) => {
+    send({ type: 'session:delete', sessionId });
+    clearMessagesForSession(sessionId);
+  }, [send, clearMessagesForSession]);
 
   // Handle git refresh
   const handleGitRefresh = useCallback(() => {
@@ -390,6 +599,13 @@ function App() {
     sendRef.current({ type: 'terminal:resize', id, cols, rows });
   }, []);
 
+  // Request settings when settings overlay opens
+  useEffect(() => {
+    if (settingsOpen && authenticated && isConnected) {
+      send({ type: 'settings:get' });
+    }
+  }, [settingsOpen, authenticated, isConnected, send]);
+
   // Auto-connect if we have a stored token
   useEffect(() => {
     if (token && !isConnected && !isConnecting && !authenticated) {
@@ -417,6 +633,9 @@ function App() {
   useEffect(() => {
     if (authenticated && isConnected) {
       send({ type: 'commands:list' });
+      send({ type: 'profiles:list' });
+      // Reconnect any existing terminals from previous session
+      send({ type: 'terminal:reconnect' });
 
       if (currentProjectPath) {
         send({ type: 'project:switch', path: currentProjectPath });
@@ -438,12 +657,13 @@ function App() {
 
   // Main app
   return (
+    <>
     <Layout
       projects={projects}
       currentProject={currentProject}
       onProjectSelect={handleProjectSelect}
       isConnected={isConnected}
-      onLogout={handleLogout}
+      onSettingsOpen={() => setSettingsOpen(true)}
       activeTab={activeTab}
       onTabChange={setActiveTab}
       hasOpenFile={!!selectedFile}
@@ -454,6 +674,9 @@ function App() {
       connectionState={connectionState}
       reconnectAttempts={reconnectAttempts}
       onReconnect={reconnect}
+      browseEntries={browseEntries}
+      browsePath={browsePath}
+      onBrowseFolder={handleBrowseFolder}
     >
       {/* Desktop: VS Code-like layout */}
       <div className="hidden lg:flex flex-1 overflow-hidden">
@@ -469,11 +692,14 @@ function App() {
                 />
               </Suspense>
             ) : selectedFile ? (
-              <FileViewer
-                path={selectedFile.path}
-                content={selectedFile.content}
-                onClose={() => setSelectedFile(null)}
-              />
+              <Suspense fallback={<div className="h-full flex items-center justify-center text-gray-500">Loading editor...</div>}>
+                <FileViewer
+                  path={selectedFile.path}
+                  content={selectedFile.content}
+                  onClose={() => setSelectedFile(null)}
+                  onSave={handleFileSave}
+                />
+              </Suspense>
             ) : (
               <div className="h-full flex items-center justify-center text-gray-500">
                 <div className="text-center">
@@ -564,6 +790,7 @@ function App() {
               currentSession={currentSession}
               onSessionSelect={handleSessionSelect}
               onNewSession={handleNewSession}
+              onDeleteSession={handleDeleteSession}
             />
           </div>
           {/* Chat at bottom */}
@@ -576,6 +803,12 @@ function App() {
               currentFile={selectedFile?.path}
               tokenUsage={tokenUsage}
               commands={commands}
+              models={models}
+              currentModel={selectedModel || settings?.model}
+              onModelChange={handleModelChange}
+              profiles={profiles}
+              currentProfile={currentProfile}
+              onProfileChange={handleProfileChange}
             />
           </div>
         </div>
@@ -592,6 +825,12 @@ function App() {
             currentFile={selectedFile?.path}
             tokenUsage={tokenUsage}
             commands={commands}
+            models={models}
+            currentModel={selectedModel || settings?.model}
+            onModelChange={handleModelChange}
+            profiles={profiles}
+            currentProfile={currentProfile}
+            onProfileChange={handleProfileChange}
             // Session selector in mobile chat
             showSessionSelector
             sessions={sessions}
@@ -600,38 +839,21 @@ function App() {
             onNewSession={handleNewSession}
           />
         )}
-        {activeTab === 'file' &&
-          (selectedFile ? (
-            <FileViewer
-              path={selectedFile.path}
-              content={selectedFile.content}
-              onClose={() => setSelectedFile(null)}
-            />
-          ) : (
-            <div className="h-full flex items-center justify-center text-gray-500">
-              <div className="text-center p-6">
-                <svg
-                  className="w-16 h-16 mx-auto mb-4 opacity-50"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
-                <p className="mb-2">No file open</p>
-                <p className="text-sm text-gray-600">Select a file from the Files tab</p>
-              </div>
-            </div>
-          ))}
         {activeTab === 'files' && (
-          <div className="h-full overflow-y-auto">
-            <FileExplorer tree={fileTree} onFileSelect={handleFileSelect} selectedPath={selectedFile?.path} />
-          </div>
+          selectedFile ? (
+            <Suspense fallback={<div className="h-full flex items-center justify-center" style={{ color: 'var(--text-muted)' }}>Loading editor...</div>}>
+              <FileViewer
+                path={selectedFile.path}
+                content={selectedFile.content}
+                onClose={() => setSelectedFile(null)}
+                onSave={handleFileSave}
+              />
+            </Suspense>
+          ) : (
+            <div className="h-full overflow-y-auto">
+              <FileExplorer tree={fileTree} onFileSelect={handleFileSelect} selectedPath={undefined} />
+            </div>
+          )
         )}
         {/* Terminal always mounted on mobile for data streaming */}
         <div className="h-full" style={{ display: activeTab === 'terminal' ? 'block' : 'none' }}>
@@ -666,8 +888,39 @@ function App() {
             </div>
           </Suspense>
         )}
+        {/* Settings is now a fullscreen overlay, not a tab */}
       </div>
     </Layout>
+    {pendingPermissions.length > 0 && (
+      <ToolPermissionModal
+        request={pendingPermissions[0]}
+        onRespond={handleToolPermissionResponse}
+      />
+    )}
+    {settingsOpen && (
+      <div className="fixed inset-0 z-50 flex flex-col animate-fade-in" style={{ background: 'var(--bg-primary)' }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 safe-area-inset-top" style={{ borderBottom: '1px solid var(--border-primary)' }}>
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Settings</h2>
+          <button
+            onClick={() => setSettingsOpen(false)}
+            className="p-2 rounded-lg transition-colors"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
+          <Suspense fallback={<div className="flex items-center justify-center h-32" style={{ color: 'var(--text-muted)' }}>Loading...</div>}>
+            <SettingsPanel settings={settings} onLogout={handleLogout} />
+          </Suspense>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
